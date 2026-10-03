@@ -207,3 +207,22 @@ Build 10 validation: 60 tests passed (40 core, 20 media), release archive succee
 - Owner acceptance after replacing the app: choose camera/background, adjust samples and sliders, quit AppleCam completely, reopen it, and confirm preferences restore with capture stopped. Select Preview locally or Send to AppleCam explicitly. The first upgrade from build 10 requires setup once, since build 10 never saved these values.
 
 Build 11 distribution: Developer ID notarization accepted; strict signatures, staple, Gatekeeper and producer signature requirements passed. Artifact: `build/Notarized-Autosave-11/AppleCam.app`. The full signed-app quit/relaunch is an owner acceptance check; automated restoration tests exercise fresh CameraModel instances and persistent files. See `artifacts/verification/automatic-settings-build-11.json`.
+
+### Build 12 — per-camera profiles, formats and background shortcuts (2026-10-03)
+
+- 88 automated tests passed: 55 core and 33 media. New coverage includes schema-1 migration, independent per-camera calibration/format/preview/disclosure/background restoration, the application termination notification, four-image retention and cross-profile cleanup, missing-camera format preservation, supported fractional/custom rates and disjoint ranges, selected-size frame admission, jitter-resistant output cadence, 720p24/4K30 processed producer frames, and GPU aspect-fit conversion preserving timestamps. Thumbnail dimensions are bounded to 256 pixels independently of the processing background.
+- Unsigned universal Debug build and embedded app/extension layout passed. Release archive succeeded. Settings tests used temporary directories. No user calibration file or camera frame was read, changed or recorded.
+- Read-only AVFoundation discovery of the connected Logitech BRIO reported 122 distinct resolution/rate intervals. In its current state it exposes nominal 1080p30 and 720p60, with smaller formats, but no 4K format. This verifies metadata availability, not capture performance or the reason for unavailable 4K. Device discovery does not start capture.
+- The selected capture format now reaches the virtual sink; the extension accepts negotiated source formats and converts processed frames for the receiving client. This protocol change requires updating the installed extension. The sink reads back its format/rate and refuses mismatches, including an older extension that ignores format selection. Strict producer signing and frame-age checks remain. Extension camera metadata discovery uses the public camera capability entitlement; no physical capture session runs inside the extension.
+- OS extension property negotiation, camera consent/activation, camera-specific live timing, picker presentation and actual meeting delivery cannot be established by in-process unit tests. The installed app and extension were left untouched. No live multi-camera/Meet/Teams acceptance or sustained performance claim is made for build 12.
+
+Owner acceptance after Finder replacement:
+
+1. Quit AppleCam, replace it in Applications with build 12, launch it, and click Install camera extension. Follow macOS's approval/result message.
+2. Confirm the old camera profile retains its samples, controls and background (now shortcut 1); capture must remain stopped after launch.
+3. Select a camera and supported resolution/rate. Start local preview and check actual capture fps. Stop before changing source/format.
+4. Assign all four buttons. Switch images live, collapse the green-screen group, and use the buttons while collapsed. Right-click one to replace or clear it.
+5. Configure another camera differently; switch back and confirm independent profiles. Quit/reopen and check both again.
+6. Send to AppleCam, reselect it in Meet/Teams, and inspect the image at two supported format choices. Check proportions, motion, glasses and hair. Receiving applications may negotiate a smaller resolution/rate; output must remain processed.
+
+Build 12 distribution: notarized export accepted; strict deep signature verification, stapled ticket, Gatekeeper and producer signature requirement checks passed. Host and embedded extension both report build 12. Artifact: `build/Notarized-Profiles-12/AppleCam.app`. See `artifacts/verification/camera-profiles-build-12.json`.

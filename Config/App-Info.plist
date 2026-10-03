@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>AppleCam uses your selected camera for an explicit preview or virtual camera output.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
 	<key>NSSystemExtensionUsageDescription</key>
 	<string>AppleCam publishes processed video as a selectable camera for meeting apps.</string>
 </dict>

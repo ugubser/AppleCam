@@ -10,16 +10,35 @@ final class CameraModel: ObservableObject {
     @Published var running = false
     @Published var busy = false
     @Published var publishing = false
-    @Published var cameraReady = false
-    private var openEffectsWhenReady = false
     @Published var image: CGImage?
     @Published var captureFPS: Double = 0
     @Published var previewFPS: Double = 0
     private let previewMailbox = LatestFrameMailbox<CGImage>()
     private var previewRate = FrameRateCounter()
     private var rateTimer: Timer?
-    @Published var selection = "pattern" { didSet { savePreferences() } }
+    @Published var selection = "pattern" { didSet { switchProfile(from: oldValue) } }
     @Published var cameras: [AVCaptureDevice] = []
+    @Published var captureConfiguration = CaptureConfiguration() { didSet { savePreferences() } }
+    @Published var availableConfigurations: [CaptureConfiguration] = []
+    @Published var capabilities: [CameraCapability] = []
+    @Published var controlsExpanded = true { didSet { savePreferences() } }
+    @Published var backgroundSlots: [SavedBackground?] = Array(repeating: nil, count: 4)
+    @Published var backgroundThumbnails: [CGImage?] = Array(repeating: nil, count: 4)
+    var previewAspect: Double { Double(captureConfiguration.width) / Double(captureConfiguration.height) }
+    var formatAvailable: Bool {
+        selection == "pattern" ? captureConfiguration.isValid : capabilities.contains { $0.supports(captureConfiguration) }
+    }
+    var resolutions: [CaptureConfiguration] {
+        var seen = Set<String>()
+        return availableConfigurations.filter { seen.insert($0.resolution).inserted }
+    }
+    var ratesForResolution: [CaptureConfiguration] {
+        availableConfigurations.filter { $0.width == captureConfiguration.width && $0.height == captureConfiguration.height }
+    }
+    func selectResolution(_ resolution: String) {
+        guard !running, !busy, let option = availableConfigurations.first(where: { $0.resolution == resolution && $0.fps == captureConfiguration.fps }) ?? availableConfigurations.first(where: { $0.resolution == resolution }) else { return }
+        captureConfiguration = option
+    }
     @Published var useGreenScreen = false {
         didSet {
             if !useGreenScreen { previewMode = .composite }
@@ -39,6 +58,7 @@ final class CameraModel: ObservableObject {
     private let producer = FrameProducer()
     private var requestID = 0
     private let preferencesStore: PreferencesStore
+    private var preferences = SavedPreferences()
     private var restoring = true
     private var savedBackground: SavedBackground?
     private var savedCameraName = "Saved camera"
@@ -49,21 +69,13 @@ final class CameraModel: ObservableObject {
     var unavailableCameraName: String { "\(savedCameraName) (disconnected)" }
     init(preferencesStore: PreferencesStore = PreferencesStore()) {
         self.preferencesStore = preferencesStore
-        producer.onState = { [weak self] publishing, ready in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.publishing = publishing; self.cameraReady = ready
-                if ready && self.openEffectsWhenReady {
-                    self.openEffectsWhenReady = false
-                    self.showAppleEffects()
-                }
-            }
+        producer.onState = { [weak self] publishing, _ in
+            DispatchQueue.main.async { self?.publishing = publishing }
         }
         producer.onStatus = { [weak self] text, active in
             DispatchQueue.main.async {
                 self?.status = text; self?.running = active; self?.busy = false
                 if !active {
-                    self?.openEffectsWhenReady = false
                     self?.sampling = false; self?.samplePending = false
                     self?.image = nil
                     self?.previewMailbox.invalidate()
@@ -104,31 +116,73 @@ final class CameraModel: ObservableObject {
                 }
             }
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(flushPreferences), name: NSApplication.willTerminateNotification, object: nil)
         refresh()
         restorePreferences()
     }
+    @objc func flushPreferences() { savePreferences() }
+    deinit { NotificationCenter.default.removeObserver(self) }
+    private func currentProfile(cameraID: String) -> CameraProfile {
+        var profile = CameraProfile()
+        profile.cameraName = cameraID == "pattern" ? "Labelled test pattern (no webcam)" :
+            (cameras.first { $0.uniqueID == cameraID }?.localizedName ?? savedCameraName)
+        profile.greenScreen = useGreenScreen; profile.preview = previewMode
+        profile.key = key; profile.background = savedBackground; profile.backgrounds = backgroundSlots
+        profile.controlsExpanded = controlsExpanded; profile.capture = captureConfiguration
+        return profile
+    }
     private func snapshot() -> SavedPreferences {
-        var settings = SavedPreferences()
-        settings.cameraID = selection
-        settings.cameraName = selection == "pattern" ? "Labelled test pattern (no webcam)" :
-            (cameras.first { $0.uniqueID == selection }?.localizedName ?? savedCameraName)
-        settings.greenScreen = useGreenScreen; settings.preview = previewMode
-        settings.key = key; settings.background = savedBackground
+        var settings = preferences
+        settings.cameraID = selection; settings.profile = currentProfile(cameraID: selection)
         return settings
+    }
+    private func updateCapabilities() {
+        if selection == "pattern" {
+            capabilities = []
+            availableConfigurations = [CaptureConfiguration(), CaptureConfiguration(width: 1280, height: 720, fps: 24), CaptureConfiguration(width: 3840, height: 2160, fps: 30)]
+        } else if let device = cameras.first(where: { $0.uniqueID == selection }) {
+            capabilities = CameraCapabilities.ranges(for: device)
+            availableConfigurations = CameraCapabilities.configurations(for: device)
+        } else { capabilities = []; availableConfigurations = [] }
+    }
+    private func applyProfile(_ profile: CameraProfile) {
+        savedCameraName = profile.cameraName
+        key = profile.key; useGreenScreen = profile.greenScreen; previewMode = profile.preview
+        controlsExpanded = profile.controlsExpanded
+        updateCapabilities()
+        // Defaults apply only to a new camera profile. Never replace an unavailable saved choice.
+        captureConfiguration = profile.capture ?? (availableConfigurations.first(where: { $0 == CaptureConfiguration() }) ?? availableConfigurations.first ?? CaptureConfiguration())
+        savedBackground = profile.background; backgroundSlots = profile.backgrounds
+        background = nil; backgroundName = profile.background?.name ?? "No background selected"
+        backgroundThumbnails = backgroundSlots.map { reference in
+            guard let reference else { return nil }
+            return try? GreenScreenProcessor.loadBackground(preferencesStore.backgroundURL(reference), maximumDimension: 256)
+        }
+        if let reference = profile.background {
+            do { background = try GreenScreenProcessor.loadBackground(preferencesStore.backgroundURL(reference)) }
+            catch { status = "Saved background could not be opened. Choose the background again before using Green screen."; return }
+        }
+        status = "Settings restored for this camera. Start a preview or send when ready."
+    }
+    private func switchProfile(from oldID: String) {
+        guard !restoring, oldID != selection else { return }
+        // The camera picker is disabled during capture, so a profile switch cannot change a live source.
+        preferences.profiles[oldID] = currentProfile(cameraID: oldID)
+        preferences.cameraID = selection
+        restoring = true
+        applyProfile(preferences.profile)
+        restoring = false
+        savePreferences()
     }
     private func restorePreferences() {
         defer { restoring = false }
         do {
-            guard let settings = try preferencesStore.load() else { return }
-            selection = settings.cameraID; savedCameraName = settings.cameraName
-            savedBackground = settings.background
-            key = settings.key; useGreenScreen = settings.greenScreen; previewMode = settings.preview
-            if let savedBackground {
-                backgroundName = savedBackground.name
-                do { background = try GreenScreenProcessor.loadBackground(preferencesStore.backgroundURL(savedBackground)) }
-                catch { status = "Saved background could not be opened. Choose the background again before using Green screen."; return }
-            }
-            status = "Settings restored. Start a preview or send to AppleCam when ready."
+            if let settings = try preferencesStore.load() {
+                preferences = settings; selection = settings.cameraID
+                applyProfile(settings.profile)
+                // Persist a successfully decoded v1 migration in the v2 schema.
+                try preferencesStore.save(snapshot())
+            } else { updateCapabilities() }
         } catch {
             restorationFailed = true; settingsError = true
             settingsMessage = "Saved settings could not be loaded: \(error.localizedDescription) Review the controls, then choose Save current settings to replace them."
@@ -138,7 +192,7 @@ final class CameraModel: ObservableObject {
     private func savePreferences() {
         guard !restoring, !restorationFailed else { return }
         do {
-            try preferencesStore.save(snapshot())
+            let next = snapshot(); try preferencesStore.save(next); preferences = next
             settingsError = false; settingsMessage = "Settings saved automatically."
         } catch {
             settingsError = true; settingsMessage = "Settings could not be saved: \(error.localizedDescription)"
@@ -147,16 +201,19 @@ final class CameraModel: ObservableObject {
     func saveCurrentPreferences() {
         // An explicit action is required to replace an unreadable saved configuration.
         do {
-            try preferencesStore.save(snapshot())
+            let next = snapshot(); try preferencesStore.save(next); preferences = next
             restorationFailed = false; settingsError = false
             settingsMessage = "Settings saved automatically."
         } catch { settingsError = true; settingsMessage = "Settings could not be saved: \(error.localizedDescription)" }
     }
     /// Import only the selected background, never camera frames. Committed before changing the live picture.
-    func importBackground(_ url: URL) throws {
+    func importBackground(_ url: URL, slot: Int? = nil) throws {
         guard !restorationFailed else { throw CameraError.message("Save current settings before replacing the background.") }
         let image = try GreenScreenProcessor.loadBackground(url)
-        let next = try preferencesStore.importBackground(Data(contentsOf: url), name: url.lastPathComponent, settings: snapshot())
+        let thumbnail = try slot.map { _ in try GreenScreenProcessor.loadBackground(url, maximumDimension: 256) }
+        let next = try preferencesStore.importBackground(Data(contentsOf: url), name: url.lastPathComponent, settings: snapshot(), slot: slot)
+        preferences = next; backgroundSlots = next.profile.backgrounds
+        if let slot { backgroundThumbnails[slot] = thumbnail }
         savedBackground = next.background; background = image; backgroundName = url.lastPathComponent
         settingsError = false; settingsMessage = "Settings saved automatically."
         if running && useGreenScreen { producer.setGreenScreen(background: image, settings: key) }
@@ -167,17 +224,24 @@ final class CameraModel: ObservableObject {
         guard !enabled || background != nil else { return }
         useGreenScreen = enabled
     }
-    func showAppleEffects() {
-        guard selection != "pattern", !busy else { return }
-        if !cameraReady {
-            openEffectsWhenReady = true
-            start(publish: false)
-            return
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        AVCaptureDevice.showSystemUserInterface(.videoEffects)
+    func selectBackgroundSlot(_ slot: Int) {
+        guard (0..<4).contains(slot), !busy else { return }
+        guard let reference = backgroundSlots[slot] else { chooseBackground(slot: slot); return }
+        do {
+            let image = try GreenScreenProcessor.loadBackground(preferencesStore.backgroundURL(reference))
+            savedBackground = reference; background = image; backgroundName = reference.name
+            savePreferences()
+            if running && useGreenScreen { producer.setGreenScreen(background: image, settings: key) }
+            else { status = "Background selected: \(reference.name)." }
+        } catch { status = "This saved background cannot be opened. Use Replace image on its button to select it again." }
     }
-    func chooseBackground() {
+    func clearBackgroundSlot(_ slot: Int) {
+        guard (0..<4).contains(slot) else { return }
+        backgroundSlots[slot] = nil; backgroundThumbnails[slot] = nil
+        savePreferences()
+    }
+    func isActiveBackgroundSlot(_ slot: Int) -> Bool { backgroundSlots[slot]?.id == savedBackground?.id && savedBackground != nil }
+    func chooseBackground(slot: Int? = nil) {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.png, .jpeg]
         panel.canChooseDirectories = false; panel.allowsMultipleSelection = false
@@ -186,7 +250,7 @@ final class CameraModel: ObservableObject {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         do {
-            try importBackground(url)
+            try importBackground(url, slot: slot)
         } catch { status = error.localizedDescription }
     }
     func beginSample(append: Bool) {
@@ -208,7 +272,7 @@ final class CameraModel: ObservableObject {
         samplePending = true
         producer.sample(x: x, y: y)
     }
-    func refresh() { cameras = FrameProducer.cameras() }
+    func refresh() { cameras = FrameProducer.cameras(); updateCapabilities() }
     func start(publish: Bool) {
         guard !busy else { return }
         guard !restorationFailed else { status = "Review and save your settings before starting."; return }
@@ -216,6 +280,7 @@ final class CameraModel: ObservableObject {
         guard !useGreenScreen || background != nil else {
             status = "Choose a background image before enabling green-screen processing."; return
         }
+        guard formatAvailable else { status = "This camera does not offer the saved format. Choose an available resolution and frame rate."; return }
         busy = true; requestID += 1
         previewMailbox.invalidate()
         previewRate.reset(at: ProcessInfo.processInfo.systemUptime)
@@ -231,7 +296,8 @@ final class CameraModel: ObservableObject {
         let selected = selection
         let backdrop = useGreenScreen ? background : nil
         let settings = key
-        if selected == "pattern" { producer.start(mode: .pattern, publish: publish, background: backdrop, settings: settings); return }
+        let configuration = captureConfiguration
+        if selected == "pattern" { producer.start(mode: .pattern, publish: publish, background: backdrop, settings: settings, configuration: configuration); return }
         status = "Opening camera. If macOS asks for camera access, allow AppleCam to continue."
         AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
             DispatchQueue.main.async {
@@ -242,9 +308,9 @@ final class CameraModel: ObservableObject {
                     self.status = "Camera access was denied. Enable AppleCam in System Settings → Privacy & Security → Camera."
                     return
                 }
-                self.producer.start(mode: .camera(selected), publish: publish, background: backdrop, settings: settings)
+                self.producer.start(mode: .camera(selected), publish: publish, background: backdrop, settings: settings, configuration: configuration)
             }
         }
     }
-    func stop() { openEffectsWhenReady = false; requestID += 1; busy = true; previewMailbox.invalidate(); producer.stop() }
+    func stop() { savePreferences(); requestID += 1; busy = true; previewMailbox.invalidate(); producer.stop() }
 }

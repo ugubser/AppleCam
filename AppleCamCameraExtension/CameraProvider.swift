@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import CoreMediaIO
 import IOKit.audio
 import os
@@ -35,6 +36,8 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
     private var generation = 0
     private var readers = 0
     private var gate = FrameGate()
+    private var converter: VideoOutputConverter!
+    private var cadence = OutputCadence()
     private var consumedFrames = 0
     private var sentFrames = 0
     private var emptyReads = 0
@@ -49,16 +52,29 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
         device = CMIOExtensionDevice(localizedName: CameraContract.name,
                                      deviceID: CameraContract.deviceID,
                                      legacyDeviceID: CameraContract.deviceID.uuidString, source: self)
-        var description: CMVideoFormatDescription?
-        let status = CMVideoFormatDescriptionCreate(allocator: kCFAllocatorDefault,
-            codecType: kCVPixelFormatType_32BGRA, width: Int32(CameraContract.width),
-            height: Int32(CameraContract.height), extensions: nil, formatDescriptionOut: &description)
-        guard status == noErr, let description else { throw CameraError.operation("Video format", status) }
-        let duration = CMTime(value: 1, timescale: CameraContract.fps)
-        let format = CMIOExtensionStreamFormat(formatDescription: description,
-            maxFrameDuration: duration, minFrameDuration: duration, validFrameDurations: nil)
-        source = CameraStream(owner: self, direction: .source, format: format)
-        sink = CameraStream(owner: self, direction: .sink, format: format)
+        converter = try VideoOutputConverter()
+        // Advertise standard meeting formats plus every resolution of cameras currently attached.
+        // CMIO requires this list to remain stable for the lifetime of the stream.
+        var sizes = Set(["1920x1080", "1280x720", "3840x2160", "4096x2160", "2560x1440", "640x480", "640x360", "320x240", "800x600", "1024x768", "1280x960", "1600x1200", "1920x1200", "5120x2880", "7680x4320"])
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
+        for camera in devices where camera.uniqueID != CameraContract.deviceID.uuidString {
+            for format in camera.formats {
+                let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                if size.width > 0 && size.height > 0 && size.width <= 16384 && size.height <= 16384 { sizes.insert("\(size.width)x\(size.height)") }
+            }
+        }
+        let ordered = ["1920x1080"] + sizes.filter { $0 != "1920x1080" }.sorted()
+        let formats = try ordered.map { size -> CMIOExtensionStreamFormat in
+            let dimensions = size.split(separator: "x").map { Int32($0)! }
+            var description: CMVideoFormatDescription?
+            let status = CMVideoFormatDescriptionCreate(allocator: nil, codecType: kCVPixelFormatType_32BGRA,
+                width: dimensions[0], height: dimensions[1], extensions: nil, formatDescriptionOut: &description)
+            guard status == noErr, let description else { throw CameraError.operation("Video format", status) }
+            return CMIOExtensionStreamFormat(formatDescription: description, maxFrameDuration: CMTime(value: 1, timescale: 1),
+                minFrameDuration: CMTime(value: 1, timescale: 1000), validFrameDurations: nil)
+        }
+        source = CameraStream(owner: self, direction: .source, formats: formats)
+        sink = CameraStream(owner: self, direction: .sink, formats: formats)
         try device.addStream(source.stream)
         try device.addStream(sink.stream)
     }
@@ -66,7 +82,7 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
     func deviceProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionDeviceProperties {
         let result = CMIOExtensionDeviceProperties(dictionary: [:])
         result.transportType = kIOAudioDeviceTransportTypeVirtual
-        result.model = "AppleCam M0"
+        result.model = "AppleCam"
         return result
     }
     func setDeviceProperties(_ properties: CMIOExtensionDeviceProperties) throws {}
@@ -105,12 +121,13 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
         }
         guard producer != nil, timer == nil else { throw CameraError.message("No producer, or sink already started") }
         generation += 1
-        gate = FrameGate()
+        gate = FrameGate(width: sink.configuration.width, height: sink.configuration.height)
+        cadence = OutputCadence()
         consumedFrames = 0; sentFrames = 0; emptyReads = 0
         missingImages = 0; rejectedFrames = 0; lastDiagnosticTime = 0
         log.notice("Producer stream started")
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: .nanoseconds(1_000_000_000 / Int(CameraContract.fps)))
+        timer.schedule(deadline: .now(), repeating: .nanoseconds(Int(1_000_000_000 / sink.configuration.fps)))
         timer.setEventHandler { [weak self] in self?.consume() }
         self.timer = timer
         timer.resume()
@@ -126,6 +143,21 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
         timer?.cancel(); timer = nil
         producer = nil; consuming = false
         gate = FrameGate()
+    }
+    func configure(_ stream: CameraStream, index: Int?, duration: CMTime?) throws {
+        let nextIndex = index ?? stream.activeIndex
+        guard stream.formats.indices.contains(nextIndex) else { throw CameraError.message("Unsupported virtual-camera resolution.") }
+        let nextDuration = duration ?? stream.duration
+        guard nextDuration.isNumeric, nextDuration.seconds >= 0.001, nextDuration.seconds <= 1 else {
+            throw CameraError.message("Unsupported virtual-camera frame rate.")
+        }
+        if stream === sink, timer != nil { throw CameraError.message("Stop sending before changing the virtual-camera format.") }
+        stream.activeIndex = nextIndex; stream.duration = nextDuration
+        stream.notifyFormat()
+        if stream === sink && readers == 0 {
+            source.activeIndex = nextIndex; source.duration = nextDuration; source.notifyFormat()
+        }
+        cadence = OutputCadence()
     }
     func disconnect(_ client: CMIOExtensionClient) {
         if producer == client { stop(.sink) }
@@ -161,15 +193,22 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
                     try self.gate.accept(timestamp: buffer.presentationTimeStamp.seconds, now: now.seconds,
                         width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image),
                         isBGRA: CVPixelBufferGetPixelFormatType(image) == kCVPixelFormatType_32BGRA)
-                    if self.readers > 0 {
-                        self.source.stream.send(buffer, discontinuity: flags, hostTimeInNanoseconds: nanos)
-                        self.sentFrames += 1
-                    }
                 } catch {
                     self.rejectedFrames += 1
                     if self.rejectedFrames == 1 {
                         self.log.error("Rejected frame: \(String(describing: error), privacy: .public); pts=\(buffer.presentationTimeStamp.seconds) now=\(now.seconds)")
                     }
+                    return
+                }
+                guard self.readers > 0, self.cadence.shouldEmit(timestamp: buffer.presentationTimeStamp.seconds,
+                    inputFPS: self.sink.configuration.fps, outputFPS: self.source.configuration.fps) else { return }
+                do {
+                    let converted = try self.converter.convert(buffer, to: self.source.configuration)
+                    self.source.stream.send(converted, discontinuity: flags, hostTimeInNanoseconds: nanos)
+                    self.sentFrames += 1
+                } catch {
+                    self.log.error("Output conversion stopped: \(error.localizedDescription, privacy: .public)")
+                    self.stop(.sink)
                 }
             }
         }
@@ -181,8 +220,18 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource {
     private unowned let owner: CameraDevice
     private let direction: CMIOExtensionStream.Direction
     let formats: [CMIOExtensionStreamFormat]
-    init(owner: CameraDevice, direction: CMIOExtensionStream.Direction, format: CMIOExtensionStreamFormat) {
-        self.owner = owner; self.direction = direction; formats = [format]
+    var activeIndex = 0
+    var duration = CMTime(value: 1, timescale: 30)
+    var configuration: CaptureConfiguration {
+        let size = CMVideoFormatDescriptionGetDimensions(formats[activeIndex].formatDescription)
+        return CaptureConfiguration(width: Int(size.width), height: Int(size.height), fps: 1 / duration.seconds)
+    }
+    func notifyFormat() {
+        stream.notifyPropertiesChanged([.streamActiveFormatIndex: CMIOExtensionPropertyState<AnyObject>(value: NSNumber(value: activeIndex)),
+            .streamFrameDuration: CMIOExtensionPropertyState<AnyObject>(value: CMTimeCopyAsDictionary(duration, allocator: nil)!)])
+    }
+    init(owner: CameraDevice, direction: CMIOExtensionStream.Direction, formats: [CMIOExtensionStreamFormat]) {
+        self.owner = owner; self.direction = direction; self.formats = formats
         super.init()
         stream = CMIOExtensionStream(localizedName: direction == .source ? "AppleCam Video" : "AppleCam Input",
             streamID: direction == .source ? CameraContract.sourceID : CameraContract.sinkID,
@@ -195,8 +244,8 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource {
     }
     func streamProperties(forProperties properties: Set<CMIOExtensionProperty>) throws -> CMIOExtensionStreamProperties {
         let result = CMIOExtensionStreamProperties(dictionary: [:])
-        result.activeFormatIndex = 0
-        result.frameDuration = CMTime(value: 1, timescale: CameraContract.fps)
+        result.activeFormatIndex = activeIndex
+        result.frameDuration = duration
         if direction == .sink {
             result.sinkBufferQueueSize = CameraContract.queueCapacity
             result.sinkBuffersRequiredForStartup = 1
@@ -204,11 +253,9 @@ final class CameraStream: NSObject, CMIOExtensionStreamSource {
         return result
     }
     func setStreamProperties(_ properties: CMIOExtensionStreamProperties) throws {
-        if let index = properties.activeFormatIndex, index != 0 { throw CameraError.message("Only 1080p BGRA is supported") }
-        if let duration = properties.frameDuration, duration != CMTime(value: 1, timescale: CameraContract.fps) {
-            throw CameraError.message("Only 30 fps is supported")
-        }
+        try owner.configure(self, index: properties.activeFormatIndex, duration: properties.frameDuration)
     }
+
     func authorizedToStartStream(for client: CMIOExtensionClient) -> Bool {
         direction == .source || owner.authorize(client)
     }

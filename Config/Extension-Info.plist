@@ -20,6 +20,10 @@
 	<string>SYSX</string>
 	<key>NSSystemExtensionUsageDescription</key>
 	<string>AppleCam delivers video to meeting apps through a camera extension.</string>
+	<key>NSCameraUseContinuityCameraDeviceType</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>AppleCam reads connected camera formats to offer matching virtual-camera resolutions. Camera capture is controlled in the AppleCam app.</string>
 	<key>CMIOExtension</key>
 	<dict>
 		<key>CMIOExtensionMachServiceName</key>

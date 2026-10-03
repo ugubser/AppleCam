@@ -24,18 +24,20 @@ public struct FrameGate {
             case .future: return "The camera frame timestamp is ahead of the system clock."
             case .expired: return "The camera frame arrived too late to send."
             case .nonIncreasing: return "The camera supplied repeated or out-of-order frame timestamps."
-            case .wrongFormat: return "The camera frame is not 1920 × 1080 BGRA."
+            case .wrongFormat: return "The camera frame does not match the selected BGRA format."
             }
         }
     }
+    private let width: Int
+    private let height: Int
     public private(set) var lastAccepted: Double?
-    public init() {}
+    public init(width: Int = CameraContract.width, height: Int = CameraContract.height) { self.width = width; self.height = height }
     public mutating func accept(timestamp: Double, now: Double,
                                 width: Int, height: Int, isBGRA: Bool) throws {
         guard timestamp.isFinite, now.isFinite, timestamp >= 0, now >= 0 else {
             throw Rejection.invalidTime
         }
-        guard width == CameraContract.width, height == CameraContract.height, isBGRA else {
+        guard width == self.width, height == self.height, isBGRA else {
             throw Rejection.wrongFormat
         }
         guard timestamp <= now + 0.005 else { throw Rejection.future }
@@ -48,9 +50,9 @@ public struct FrameGate {
 /// Discard individual late frames without ever forwarding or retimestamping them.
 /// A continuous two-second period without a fresh frame remains a visible failure.
 public struct FrameAdmission {
-    private var gate = FrameGate()
+    private var gate: FrameGate
     private var staleSince: Double?
-    public init() {}
+    public init(width: Int = CameraContract.width, height: Int = CameraContract.height) { gate = FrameGate(width: width, height: height) }
     public mutating func shouldSend(timestamp: Double, now: Double,
                                     width: Int, height: Int, isBGRA: Bool) throws -> Bool {
         do {

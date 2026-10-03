@@ -33,7 +33,7 @@ The owner confirmed the BRIO, Chrome, 1080p 30 fps and still-background scope du
 
 The release uses AVFoundation for capture, Core Image backed by Metal for processing, and Core Media I/O for a camera extension. Apple manages the camera permission and extension infrastructure. AppleCam supplies the keying algorithm and its controls.
 
-AppleCam can open Apple's Video Effects interface through a public API. There is no verified public API for inserting AppleCam controls into that interface. Access to specific Apple effects depends on the camera, capture format and runtime path; opening the interface is not evidence that every effect works.
+The public API to request Apple's Video Effects interface did not reliably present useful controls in the owner's setup. The owner requested removal of this button in build 12. There is no verified public API for inserting AppleCam controls into that interface. Access to specific Apple effects depends on the camera, capture format and runtime path; opening the interface is not evidence that every effect works.
 
 The first release excludes animated backgrounds, audio processing, recording, streaming to broadcast services, account login, cloud processing, telemetry, automatic AI segmentation, multiple-camera compositing, older macOS certification and Intel certification. Continuity Camera is an exploratory compatibility check, not a release requirement. Custom effects embedded in Apple's own camera panel are outside scope.
 
@@ -46,7 +46,7 @@ The first release excludes animated backgrounds, audio processing, recording, st
 3. Grant camera access, select the BRIO and select a background image.
 4. Open the local preview and sample the physical backdrop colour.
 5. Adjust tolerance, edge softness and green-spill removal while inspecting glasses, hair and hands.
-6. Open Apple's controls from AppleCam if needed; choose any effects to combine with green-screen processing.
+6. Use macOS's own menu-bar video controls if needed; choose any effects to combine with green-screen processing.
 7. Enable AppleCam, select it in the Teams web camera picker and inspect the pre-join preview with Teams background effects set to None.
 
 The interface must explain extension approval separately from camera permission. It must report when activation requires a later restart, rather than implying that the camera is ready.
@@ -98,7 +98,7 @@ P0 requirements are required for the first personal-use release. P1 requirements
 | ID | Priority | Requirement | Acceptance |
 | --- | --- | --- | --- |
 | AC-APL-01 | P0 | Use public Apple capture, processing and extension APIs, with SIP enabled. | Dependency and package review finds no private API hooks, system modifications or legacy DAL plug-in. |
-| AC-APL-02 | P0 | Include an Open Apple Video Effects control using the system UI API. | With AppleCam capturing, the button opens the relevant Apple controls. Check actual process attribution, not just that a panel appears. |
+| AC-APL-02 | Removed by owner | Do not show the nonworking Open Apple Video Effects button. | No button or related automatic panel action remains. Apple effects themselves remain allowed. |
 | AC-APL-03 | P0 | Allow Apple Background Replacement and Portrait alongside green-screen processing (owner revision, 2026-10-02). | Neither effect pauses preview, sampling or publication, and no effect-conflict warning appears. AppleCam does not change the user’s Apple settings. |
 | AC-APL-04 | P1 | Document and test coexistence with supported Apple effects, including Studio Light or Center Stage where available. | Record per-camera capability and output results. Unsupported effects are not advertised as AppleCam features. |
 
@@ -161,3 +161,15 @@ Primary evidence and its limits are recorded in [Sources and decisions](SOURCES_
 ## Owner revision — automatic saving (2026-10-02, build 11)
 
 Automatically retain selected camera, imported background, primary and additional screen samples, calibration sliders, green-screen enablement and local preview mode across quit/relaunch. Keep a private local copy of the imported background. Restore settings without starting capture or publication. Surface saving/loading errors and never silently replace an unavailable source, background or unreadable configuration. This supersedes earlier session-only behavior.
+
+## Owner revision — camera profiles and format choices (2026-10-03, build 12)
+
+This revision expands the initial BRIO/1080p30 scope and supersedes the effects-button requirement.
+
+- Save every AppleCam configuration value, all screen samples and four background shortcuts independently by camera ID; save on edits and quit. Preserve prior settings through migration. Runtime capture/publication remains explicitly started. Apple's own effects settings remain owned by macOS.
+- Discover each camera's supported dimensions and distinct frame-rate ranges, including fractional rates. Allow supported resolution/rate selection per camera, preserve unavailable saved choices and report them rather than substituting another camera or format. The selected capture format also reaches the extension; receiving applications can explicitly negotiate their own output format.
+- Collapse/expand the entire green-screen control group and retain that preference per camera. Background shortcuts remain accessible when collapsed.
+- Exactly four image buttons per camera. Empty button opens PNG/JPEG selection; populated button selects its managed image. Context menu replaces/clears the button. Clearing an active button does not delete the background still in use.
+- Remove the Open Apple Video Effects button. No new Apple-effects restrictions.
+
+Acceptance includes switching two camera profiles, quitting/reopening, restoring calibration and all four buttons, selecting different supported formats, and inspecting output in a separate meeting client. Automated tests cover persisted models, frame dimensions/timing and GPU conversion; OS activation, live hardware rates and browser negotiation require integration checks.

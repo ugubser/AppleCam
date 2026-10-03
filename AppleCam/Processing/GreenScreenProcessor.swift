@@ -60,13 +60,13 @@ final class GreenScreenProcessor {
         }
     }
 
-    static func loadBackground(_ url: URL) throws -> CGImage {
+    static func loadBackground(_ url: URL, maximumDimension: Int = 4096) throws -> CGImage {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let type = CGImageSourceGetType(source),
               [UTType.png.identifier, UTType.jpeg.identifier].contains(type as String),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 4096,
+                kCGImageSourceThumbnailMaxPixelSize: maximumDimension,
                 kCGImageSourceCreateThumbnailWithTransform: true
               ] as CFDictionary) else {
             throw CameraError.message("Cannot read this background. Choose a PNG or JPEG image.")

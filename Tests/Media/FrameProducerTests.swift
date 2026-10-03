@@ -11,7 +11,7 @@ final class FrameProducerTests: XCTestCase {
         final class Receiver: FrameTransport {
             var starts = 0
             var frame: ((CMSampleBuffer) -> Void)?
-            func start() throws { starts += 1 }
+            func start(configuration: CaptureConfiguration) throws { starts += 1 }
             func send(_ sample: CMSampleBuffer) throws { frame?(sample) }
             func stop() {}
         }
@@ -58,7 +58,7 @@ final class FrameProducerTests: XCTestCase {
     func testKeyedPublishingContinuesAcrossLiveCalibrationAndSampling() throws {
         final class Receiver: FrameTransport {
             var starts = 0, frames = 0
-            func start() throws { starts += 1 }
+            func start(configuration: CaptureConfiguration) throws { starts += 1 }
             func send(_ sample: CMSampleBuffer) throws { frames += 1 }
             func stop() {}
         }
@@ -107,7 +107,7 @@ final class FrameProducerTests: XCTestCase {
     func testSwitchBetweenLocalPreviewAndPublishingWithoutStoppingSource() {
         final class Receiver: FrameTransport {
             var starts = 0, frames = 0
-            func start() throws { starts += 1 }
+            func start(configuration: CaptureConfiguration) throws { starts += 1 }
             func send(_ sample: CMSampleBuffer) throws { frames += 1 }
             func stop() {}
         }
@@ -154,7 +154,7 @@ final class FrameProducerTests: XCTestCase {
 
     func testPublishingFailureStopsRatherThanContinuingLocally() {
         final class Receiver: FrameTransport {
-            func start() throws { throw CameraError.message("Receiver unavailable") }
+            func start(configuration: CaptureConfiguration) throws { throw CameraError.message("Receiver unavailable") }
             func send(_ sample: CMSampleBuffer) throws { XCTFail("Sent after startup failure") }
             func stop() {}
         }
@@ -176,7 +176,7 @@ final class FrameProducerTests: XCTestCase {
     func testMaskPreviewNeverReplacesPublishedCompositeAndSamplesStayRaw() throws {
         final class Receiver: FrameTransport {
             var frame: ((CMSampleBuffer) -> Void)?
-            func start() throws {}
+            func start(configuration: CaptureConfiguration) throws {}
             func send(_ sample: CMSampleBuffer) throws { frame?(sample) }
             func stop() {}
         }
@@ -352,5 +352,37 @@ final class FrameProducerTests: XCTestCase {
             producer.queue.sync {}
         }
         XCTAssertNil(reference)
+    }
+}
+
+extension FrameProducerTests {
+    func testSelectedHDAnd4KFormatsReachTransportAndProcessedFrames() throws {
+        final class Receiver: FrameTransport {
+            var selected: CaptureConfiguration?
+            var frame: ((CMSampleBuffer) -> Void)?
+            func start(configuration: CaptureConfiguration) throws { selected = configuration }
+            func send(_ sample: CMSampleBuffer) throws { frame?(sample) }
+            func stop() {}
+        }
+        let context = CIContext()
+        let background = try XCTUnwrap(context.createCGImage(CIImage(color: .blue), from: CGRect(x: 0, y: 0, width: 16, height: 16)))
+        for configuration in [CaptureConfiguration(width: 1280, height: 720, fps: 24), .init(width: 3840, height: 2160, fps: 30)] {
+            let receiver = Receiver(), seen = expectation(description: configuration.label), stopped = expectation(description: "Stopped")
+            let producer = FrameProducer(transport: receiver)
+            var received = false
+            receiver.frame = { sample in
+                guard !received else { return }; received = true
+                XCTAssertEqual(receiver.selected, configuration)
+                XCTAssertEqual(CVPixelBufferGetWidth(sample.imageBuffer!), configuration.width)
+                XCTAssertEqual(CVPixelBufferGetHeight(sample.imageBuffer!), configuration.height)
+                XCTAssertEqual(sample.duration.seconds, configuration.duration.seconds, accuracy: 0.00000001)
+                seen.fulfill()
+            }
+            producer.onStatus = { text, active in if !active { XCTAssertTrue(text.hasPrefix("Stopped")); stopped.fulfill() } }
+            producer.start(mode: .pattern, publish: true, background: background, configuration: configuration)
+            wait(for: [seen], timeout: 10)
+            producer.stop(); wait(for: [stopped], timeout: 5)
+            producer.queue.sync {}
+        }
     }
 }

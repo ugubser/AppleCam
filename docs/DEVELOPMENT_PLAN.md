@@ -29,7 +29,7 @@ Total estimate: 8 to 18 focused engineering days, approximately 2 to 4 weeks. Ap
 3. Publish a visibly labelled development test pattern to verify activation, enumeration, frame timing and output format. This is an explicit diagnostic mode, never a runtime substitute after failure.
 4. Add AVFoundation capture of the selected BRIO in the app and a Core Media I/O sink-to-source transport in the extension. Verify an explicitly selected unprocessed development feed only in local receivers and the Teams pre-join preview. This diagnostic mode must not ship in the normal product.
 5. Check orientation, colour range, 1080p at 30 fps, timestamps, consumer counts and bounded queues. Capture and publication must stop when explicitly disabled.
-6. Add an Open Apple Video Effects action. Verify that the system UI applies to AppleCam's input capture, and verify that Apple effects can remain enabled alongside the keyer.
+6. Verify Apple effects can remain enabled alongside the keyer. The owner removed the unreliable Open Apple Video Effects action in build 12; effects are controlled through macOS.
 7. Install an incremented extension version and verify an actual running process and delivered frames. Record any deferred reboot requirement; do not try to overcome it by modifying macOS services.
 
 ### Required evidence

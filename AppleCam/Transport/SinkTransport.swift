@@ -5,7 +5,7 @@ import Foundation
 import CoreMediaIO
 
 protocol FrameTransport: AnyObject {
-    func start() throws
+    func start(configuration: CaptureConfiguration) throws
     func send(_ sample: CMSampleBuffer) throws
     func stop()
 }
@@ -20,7 +20,7 @@ final class SinkTransport: FrameTransport {
     private(set) var submitted = 0
     private(set) var dropped = 0
 
-    func start() throws {
+    func start(configuration: CaptureConfiguration) throws {
         guard buffers == nil else { throw CameraError.message("Transport already running") }
         // Public opt-in needed for extension-backed devices in CMIO discovery.
         var allow: UInt32 = 1
@@ -44,13 +44,15 @@ final class SinkTransport: FrameTransport {
         }
         guard let output else { throw CameraError.message("AppleCam input stream was not found.") }
         stream = output
+        try selectFormat(configuration)
+
         var queue: Unmanaged<CMSimpleQueue>?
         try check(CMIOStreamCopyBufferQueue(stream, { _, _, _ in }, nil, &queue), "Open input queue")
         guard let queue else { throw CameraError.message("AppleCam returned no frame queue") }
         buffers = queue.takeRetainedValue()
         do { try check(CMIODeviceStartStream(device, stream), "Start input stream") }
         catch { buffers = nil; throw error }
-        gate = FrameAdmission(); budget = QueueBudget(); submitted = 0; dropped = 0
+        gate = FrameAdmission(width: configuration.width, height: configuration.height); budget = QueueBudget(); submitted = 0; dropped = 0
     }
     func send(_ sample: CMSampleBuffer) throws {
         guard let buffers, let image = CMSampleBufferGetImageBuffer(sample) else {
@@ -88,6 +90,40 @@ final class SinkTransport: FrameTransport {
         }
         self.buffers = nil
         gate = FrameAdmission()
+    }
+    private func selectFormat(_ configuration: CaptureConfiguration) throws {
+        guard configuration.isValid else { throw CameraError.message("Invalid virtual-camera format.") }
+        var description: CMVideoFormatDescription?
+        try check(CMVideoFormatDescriptionCreate(allocator: nil, codecType: kCVPixelFormatType_32BGRA,
+            width: Int32(configuration.width), height: Int32(configuration.height), extensions: nil,
+            formatDescriptionOut: &description), "Describe selected format")
+        guard let description else { throw CameraError.message("Missing selected video format.") }
+        var formatPointer = Unmanaged.passUnretained(description).toOpaque()
+        var property = address(kCMIOStreamPropertyFormatDescription)
+        try withExtendedLifetime(description) {
+            try check(CMIOObjectSetPropertyData(stream, &property, 0, nil,
+                UInt32(MemoryLayout.size(ofValue: formatPointer)), &formatPointer), "Select virtual-camera format (install the updated extension if needed)")
+        }
+        var rate = configuration.fps
+        property = address(kCMIOStreamPropertyFrameRate)
+        try check(CMIOObjectSetPropertyData(stream, &property, 0, nil,
+            UInt32(MemoryLayout<Double>.size), &rate), "Select virtual-camera frame rate")
+        // An older installed extension may ignore property writes. Read back the
+        // negotiated format so that unsupported choices fail before any frames are sent.
+        var actual: Unmanaged<CMVideoFormatDescription>?
+        var size = UInt32(MemoryLayout.size(ofValue: actual))
+        property = address(kCMIOStreamPropertyFormatDescription)
+        try check(CMIOObjectGetPropertyData(stream, &property, 0, nil, size, &size, &actual), "Verify virtual-camera format")
+        guard let actual = actual?.takeRetainedValue() else { throw CameraError.message("The extension returned no selected format.") }
+        let dimensions = CMVideoFormatDescriptionGetDimensions(actual)
+        size = UInt32(MemoryLayout<Double>.size)
+        property = address(kCMIOStreamPropertyFrameRate)
+        try check(CMIOObjectGetPropertyData(stream, &property, 0, nil, size, &size, &rate), "Verify virtual-camera frame rate")
+        guard Int(dimensions.width) == configuration.width, Int(dimensions.height) == configuration.height,
+              CMFormatDescriptionGetMediaSubType(actual) == kCVPixelFormatType_32BGRA,
+              rate > 0, abs(1 / rate - configuration.duration.seconds) <= 0.0000001 else {
+            throw CameraError.message("The installed camera extension did not accept \(configuration.label). Install the updated extension, then try again.")
+        }
     }
     private func address(_ selector: Int) -> CMIOObjectPropertyAddress {
         CMIOObjectPropertyAddress(mSelector: UInt32(selector), mScope: UInt32(kCMIOObjectPropertyScopeGlobal), mElement: UInt32(kCMIOObjectPropertyElementMain))

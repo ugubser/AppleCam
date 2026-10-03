@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-03",
+  "build": 12,
+  "artifact": "build/Notarized-Profiles-12/AppleCam.app",
+  "changes": [
+    "Per-camera automatic configuration and quit-time flush",
+    "Schema-1 migration retaining samples and managed backgrounds",
+    "Device-reported capture resolution and frame-rate selection",
+    "Variable-format producer and negotiated virtual-camera output",
+    "Collapsible green-screen controls",
+    "Four managed background shortcuts per camera",
+    "Removed nonworking Apple Video Effects action"
+  ],
+  "automated_validation": {
+    "core_tests": 55,
+    "media_tests": 33,
+    "total_tests": 88,
+    "failures": 0,
+    "unsigned_universal_debug_build": "passed",
+    "release_archive": "passed",
+    "notarized_export": "passed",
+    "strict_deep_signature": "passed",
+    "stapled_ticket": "passed",
+    "gatekeeper": "accepted: Notarized Developer ID",
+    "producer_signature_requirements": "passed"
+  },
+  "hardware_metadata_only": {
+    "camera": "Logitech BRIO",
+    "distinct_resolution_rate_intervals": 122,
+    "advertised_examples": [
+      "1920x1080 nominal 30 fps",
+      "1280x720 nominal 60 fps"
+    ],
+    "4k_advertised": false,
+    "capture_started": false
+  },
+  "acceptance_not_run": [
+    "Installed-extension format negotiation",
+    "Live hardware capture at multiple formats",
+    "Multiple physical-camera profile switching",
+    "Signed-app quit/relaunch with owner preferences",
+    "Meet or Teams delivery with updated extension",
+    "Sustained performance and visual quality at new formats"
+  ],
+  "boundaries": [
+    "Installed app and extension left unchanged",
+    "Tests use isolated temporary preferences and synthetic images",
+    "No camera frames saved",
+    "Extension update required before new format publication",
+    "Unusual hot-plugged resolutions may need stream recreation; unsupported formats fail explicitly"
+  ],
+  "executables": {
+    "com.vanguardsignals.AppleCam": {
+      "build": "12",
+      "sha256": "f161b9149b9b5023fb7b5bc1e022cbddfc6c4275700f95f8b4fff6f396f43ae9"
+    },
+    "com.vanguardsignals.AppleCam.CameraExtension": {
+      "build": "12",
+      "sha256": "6050251869eeacd9e1fecb3fc8de11504c97fec3846dcbdd4e186fb0d0109234"
+    }
+  }
+}

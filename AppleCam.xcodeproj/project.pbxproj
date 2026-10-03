@@ -5,6 +5,14 @@
 "objectVersion" = "56";
 "archiveVersion" = "1";
 "objects" = {
+"5A8746BE24FD43319A1684D2" = { "isa" = "PBXBuildFile"; "fileRef" = "084D9D66408C45138B7DECC4"; };
+"5CBF57EDF8F843DD988F8605" = { "isa" = "PBXBuildFile"; "fileRef" = "084D9D66408C45138B7DECC4"; };
+"084D9D66408C45138B7DECC4" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Processing/VideoOutputConverter.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"D5FAB1A6FD1B41C6948556C5" = { "isa" = "PBXBuildFile"; "fileRef" = "25D0E8BAE5FD4B8CAFE5729E"; };
+"25D0E8BAE5FD4B8CAFE5729E" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Capture/CameraCapabilities.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"BB2F623A29474094A7307302" = { "isa" = "PBXBuildFile"; "fileRef" = "2DB31B96DFF34C918850B987"; };
+"B911033332A748A4830C37DF" = { "isa" = "PBXBuildFile"; "fileRef" = "2DB31B96DFF34C918850B987"; };
+"2DB31B96DFF34C918850B987" = { "isa" = "PBXFileReference"; "path" = "Shared/CaptureConfiguration.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "2C61631D95A74CF0907ED6D3" = { "isa" = "PBXFileReference"; "path" = "AppleCam/App/CameraModel.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "2CF2204CBA0748E78D229BB9" = { "isa" = "PBXBuildFile"; "fileRef" = "2C61631D95A74CF0907ED6D3"; };
 "A5142732D08F4AC2A7CEC7B9" = { "isa" = "PBXFileReference"; "path" = "Shared/SavedPreferences.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
@@ -126,6 +134,9 @@
 "isa" = "PBXGroup";
 "sourceTree" = "<group>";
 "children" = (
+"084D9D66408C45138B7DECC4",
+"25D0E8BAE5FD4B8CAFE5729E",
+"2DB31B96DFF34C918850B987",
 "2C61631D95A74CF0907ED6D3",
 "A5142732D08F4AC2A7CEC7B9",
 "4C90FD0BC29FA60B4B9B1974",
@@ -246,7 +257,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "11";
+"CURRENT_PROJECT_VERSION" = "12";
 };
 };
 "94317301ACBFD4C7A4B09CFF" = {
@@ -329,6 +340,8 @@
 "isa" = "PBXSourcesBuildPhase";
 "buildActionMask" = "2147483647";
 "files" = (
+"5A8746BE24FD43319A1684D2",
+"BB2F623A29474094A7307302",
 "FA5AE57A46C445BFB5C3C10D",
 "B8AAA01621B56086EA0EA987",
 "B72E6FE81A11CC048E5DE807",
@@ -350,6 +363,9 @@
 "isa" = "PBXSourcesBuildPhase";
 "buildActionMask" = "2147483647";
 "files" = (
+"5CBF57EDF8F843DD988F8605",
+"D5FAB1A6FD1B41C6948556C5",
+"B911033332A748A4830C37DF",
 "2CF2204CBA0748E78D229BB9",
 "E5C45BF0537347EDAF60C12C",
 "60572DCC3B737CB4D481E86C",
@@ -421,7 +437,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "11";
+"CURRENT_PROJECT_VERSION" = "12";
 };
 };
 "C7BCA3C3965F5D88DF9B6A7C" = {

@@ -40,22 +40,26 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var running = false
     private var publish = false
     private var lastFrame: Double = 0
+    private var configuration = CaptureConfiguration()
+    private var frameDuration = CaptureConfiguration().duration
 
     static func cameras() -> [AVCaptureDevice] {
-        AVCaptureDevice.DiscoverySession(deviceTypes: [.external], mediaType: .video, position: .unspecified)
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified)
             .devices.filter { $0.uniqueID != CameraContract.deviceID.uuidString && $0.localizedName != CameraContract.name }
     }
-    func start(mode: Mode, publish: Bool, background: CGImage? = nil, settings: KeySettings = KeySettings()) {
+    func start(mode: Mode, publish: Bool, background: CGImage? = nil, settings: KeySettings = KeySettings(), configuration: CaptureConfiguration = CaptureConfiguration()) {
         queue.async { [self] in
             stopOnQueue()
             do {
+                guard configuration.isValid else { throw CameraError.message("Invalid camera format.") }
+                self.configuration = configuration; frameDuration = configuration.duration
                 self.publish = publish
                 if let background {
                     guard settings.isValid else { throw CameraError.message("Invalid green-screen settings.") }
-                    keyer = try GreenScreenProcessor(background: background)
+                    keyer = try GreenScreenProcessor(background: background, width: configuration.width, height: configuration.height)
                     keySettings = settings
                 }
-                if publish { try transport.start() }
+                if publish { try transport.start(configuration: configuration) }
                 try makePool()
                 running = true; frame = 0
                 captureRate.reset(at: ProcessInfo.processInfo.systemUptime)
@@ -71,7 +75,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 case .pattern:
                     pattern = try makePattern()
                     let timer = DispatchSource.makeTimerSource(queue: queue)
-                    timer.schedule(deadline: .now(), repeating: .nanoseconds(1_000_000_000 / Int(CameraContract.fps)))
+                    timer.schedule(deadline: .now(), repeating: .nanoseconds(Int(1_000_000_000 / configuration.fps)))
                     timer.setEventHandler { [weak self] in self?.drawPattern() }
                     self.timer = timer; timer.resume()
                 case .camera(let id): try startCamera(id: id)
@@ -86,7 +90,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             guard running else { return }
             do {
                 guard settings.isValid else { throw CameraError.message("Invalid green-screen settings.") }
-                let next = try background.map { try GreenScreenProcessor(background: $0) }
+                let next = try background.map { try GreenScreenProcessor(background: $0, width: configuration.width, height: configuration.height) }
                 keyer = next; keySettings = settings
                 if next == nil { previewMode = .composite }
                 reportStatus()
@@ -98,7 +102,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             guard running else { return }
             do {
                 if enabled != publish {
-                    if enabled { try transport.start() } else { transport.stop() }
+                    if enabled { try transport.start(configuration: configuration) } else { transport.stop() }
                     publish = enabled
                 }
                 reportStatus()
@@ -137,15 +141,15 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
     private func fail(_ error: Error) { stopOnQueue(); onStatus?(error.localizedDescription, false) }
     private func makePool() throws {
-        let attributes: [CFString: Any] = [kCVPixelBufferWidthKey: CameraContract.width,
-            kCVPixelBufferHeightKey: CameraContract.height, kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+        let attributes: [CFString: Any] = [kCVPixelBufferWidthKey: configuration.width,
+            kCVPixelBufferHeightKey: configuration.height, kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
             kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferCGImageCompatibilityKey: true,
             kCVPixelBufferMetalCompatibilityKey: true]
         let status = CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &pool)
         guard status == kCVReturnSuccess else { throw CameraError.operation("Create frame pool", status) }
     }
     private func makePattern() throws -> CIImage {
-        let width = CameraContract.width, height = CameraContract.height
+        let width = configuration.width, height = configuration.height
         guard let bitmap = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
             bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CameraError.message("Cannot draw diagnostic pattern") }
@@ -156,10 +160,10 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
         let graphics = NSGraphicsContext(cgContext: bitmap, flipped: false)
         NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = graphics
-        let label = "APPLECAM • DEVELOPMENT TEST\n1920 × 1080 • 30 FPS\nNo webcam image"
+        let label = "APPLECAM • DEVELOPMENT TEST\n\(configuration.resolution) • \(configuration.rateLabel)\nNo webcam image"
         let style = NSMutableParagraphStyle(); style.alignment = .center
-        (label as NSString).draw(in: CGRect(x: 140, y: 430, width: 1640, height: 250), withAttributes: [
-            .font: NSFont.boldSystemFont(ofSize: 64), .foregroundColor: NSColor.white,
+        (label as NSString).draw(in: CGRect(x: CGFloat(width) * 0.07, y: CGFloat(height) * 0.4, width: CGFloat(width) * 0.86, height: CGFloat(height) * 0.24), withAttributes: [
+            .font: NSFont.boldSystemFont(ofSize: CGFloat(width) / 30), .foregroundColor: NSColor.white,
             .backgroundColor: NSColor.black, .paragraphStyle: style])
         NSGraphicsContext.restoreGraphicsState()
         guard let image = bitmap.makeImage() else { throw CameraError.message("Cannot make diagnostic pattern") }
@@ -169,36 +173,22 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard running, let pattern else { return }
         captureRate.record()
         let bar = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to:
-            CGRect(x: (frame * 16) % CameraContract.width, y: 60, width: 12, height: 160))
+            CGRect(x: (frame * 16) % configuration.width, y: 60, width: 12, height: 160))
         emit(bar.composited(over: pattern), at: CMClockGetTime(CMClockGetHostTimeClock()))
     }
     private func startCamera(id: String) throws {
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
-            throw CameraError.message("Camera permission is required. Grant access before starting the BRIO diagnostic.")
+            throw CameraError.message("Camera permission is required. Grant access before starting the selected camera.")
         }
         guard let device = Self.cameras().first(where: { $0.uniqueID == id }) else {
             throw CameraError.message("The selected camera is disconnected.")
         }
-        let selection = device.formats.lazy.compactMap { format -> (AVCaptureDevice.Format, CMTime)? in
-            let dimensions = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-            guard dimensions.width == CameraContract.width, dimensions.height == CameraContract.height else { return nil }
-            for range in format.videoSupportedFrameRateRanges {
-                if let duration = CaptureFrameTiming.duration(minimum: range.minFrameDuration,
-                                                               maximum: range.maxFrameDuration) {
-                    return (format, duration)
-                }
-            }
-            return nil
-        }.first
-        guard let (format, frameDuration) = selection else {
-            throw CameraError.message("The selected camera does not offer 1920 × 1080 at nominal 30 fps.")
+        guard let (format, requestedDuration) = CameraCapabilities.selection(for: configuration, device: device) else {
+            throw CameraError.message("The selected camera no longer offers \(configuration.label). Choose another available format.")
         }
+        frameDuration = requestedDuration
         let session = AVCaptureSession()
         session.beginConfiguration()
-        guard session.canSetSessionPreset(.hd1920x1080) else {
-            throw CameraError.message("The session does not support 1080p capture.")
-        }
-        session.sessionPreset = .hd1920x1080
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else { throw CameraError.message("Cannot open selected camera input.") }
         session.addInput(input)
@@ -229,6 +219,11 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
         }
         self.watchdog = watchdog; watchdog.resume()
+        try device.lockForConfiguration()
+        device.activeFormat = format
+        device.activeVideoMinFrameDuration = frameDuration
+        device.activeVideoMaxFrameDuration = frameDuration
+        device.unlockForConfiguration()
         session.startRunning()
         // Session startup applies the preset's hardware timing (24 fps on this BRIO).
         // Pin the selected format and exact supported duration after that completes,
@@ -243,7 +238,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard running, camera != nil, let image = sampleBuffer.imageBuffer else { return }
         captureRate.record()
         if !cameraReady { cameraReady = true; reportStatus() }
-        guard CVPixelBufferGetWidth(image) == CameraContract.width, CVPixelBufferGetHeight(image) == CameraContract.height else {
+        guard CVPixelBufferGetWidth(image) == configuration.width, CVPixelBufferGetHeight(image) == configuration.height else {
             fail(CameraError.message("Camera delivered an unsupported frame size.")); return
         }
         lastFrame = CMClockGetTime(CMClockGetHostTimeClock()).seconds
@@ -262,7 +257,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             if status == kCVReturnWouldExceedAllocationThreshold { return }
             guard status == kCVReturnSuccess, let raw = rawAllocation else { throw CameraError.operation("Allocate frame", status) }
             let space = CGColorSpace(name: CGColorSpace.sRGB)!
-            context.render(image, to: raw, bounds: CGRect(x: 0, y: 0, width: CameraContract.width, height: CameraContract.height), colorSpace: space)
+            context.render(image, to: raw, bounds: CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height), colorSpace: space)
             latestRaw = raw
             var delivered = raw
             var localMask: CVPixelBuffer?
@@ -282,7 +277,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let result = CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &videoDescription)
                 guard result == noErr else { throw CameraError.operation("Describe frame", result) }
             }
-            var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: CameraContract.fps),
+            var timing = CMSampleTimingInfo(duration: frameDuration,
                 presentationTimeStamp: time, decodeTimeStamp: .invalid)
             var sample: CMSampleBuffer?
             let result = CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: buffer,
