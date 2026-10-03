@@ -1,0 +1,24 @@
+{
+  "date": "2026-10-03",
+  "build": 13,
+  "artifact": "build/Notarized-Logo-13/AppleCam.app",
+  "artwork": "artifacts/branding/applecam-logo-concept-01.png",
+  "icon": "AppleCam/Resources/AppIcon.icns",
+  "icon_sha256": "95f6ea735c3141d84659750d2fa905839768cad02823b90d669926a7f3257eb7",
+  "validation": {
+    "automated_tests": 88,
+    "failures": 0,
+    "unsigned_debug_build": "passed",
+    "release_archive": "passed",
+    "icon_bundle_sizes_and_transparency": "passed for Debug and notarized Release",
+    "notarized_export": "passed",
+    "strict_deep_signature": "passed",
+    "stapled_ticket": "passed",
+    "gatekeeper": "accepted: Notarized Developer ID",
+    "producer_signature_requirements": "passed"
+  },
+  "visual_check": "128-pixel rendition inspected",
+  "installed_app_changed": false,
+  "camera_behavior": "unchanged from build 12",
+  "manual_check": "Dock/Finder appearance after owner replaces installed app"
+}

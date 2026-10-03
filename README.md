@@ -1,12 +1,14 @@
 # AppleCam
 
+<img src="artifacts/branding/applecam-logo-concept-01.png" alt="AppleCam logo" width="128">
+
 AppleCam is a native macOS app that replaces a physical green screen with a still background image and publishes the result as a virtual camera for video calls.
 
 Built with Swift, SwiftUI, AVFoundation, Core Image, Metal and Apple's Core Media I/O Camera Extension framework. Video processing happens locally; there are no third-party runtime dependencies or cloud processing services.
 
 ## Current status
 
-Version **0.1.0, build 12** is a development prototype. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
+Version **0.1.0, build 14** is a development prototype. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
 
 The latest validation run passed **88 automated tests**. Capture resolution and frame rate are selectable from the formats reported by each camera, including fractional and custom rates within supported ranges. The initial performance target remains 1920 × 1080 at nominal 30 fps. Synthetic processing measured about 30 fps; live BRIO capture has also been observed around 15 fps, so the target is not a guarantee of current camera or meeting performance. Historical measurements and their limits are recorded in [the validation plan](docs/VALIDATION_PLAN.md).
 
@@ -76,6 +78,10 @@ Build 12 changes the camera extension: after replacing the app in Applications, 
 The selected format applies to capture, keying and frames sent into the extension. A meeting client can negotiate a different output resolution/rate; the extension preserves the whole picture with aspect-fit letterboxing and reduces cadence only when explicitly requested. It does not invent extra frames or change the physical camera setting. The extension advertises common resolutions plus attached-camera resolutions visible when its streams are created. A newly attached camera with an unusual resolution may require the extension to be recreated before that resolution can be published; local capture is independent of this catalogue. Unsupported publication formats report an error instead of changing the selection. Live format negotiation with the updated extension and browser remains an owner acceptance check.
 
 Apple effects are controlled by macOS and are not blocked by AppleCam. Effects applied separately in a meeting app may further change the finished picture.
+
+## App icon
+
+The approved green-camera logo is used in Finder, the Dock and the app window. The original artwork and generation prompt are in `artifacts/branding/`. To rebuild the bundled macOS icon from that source, run `./scripts/build-app-icon.sh`. The verification script checks its bundle reference, standard/Retina representations and transparency.
 
 ## Signed distribution
 

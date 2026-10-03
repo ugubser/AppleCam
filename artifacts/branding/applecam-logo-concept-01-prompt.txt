@@ -1,0 +1,11 @@
+AppleCam logo concept 01
+Generated with the built-in image_gen tool. Transparent background requested.
+Status: approved by the owner and adopted as the application icon in build 13.
+The original PNG is preserved. Standard macOS icon sizes are packaged by scripts/build-app-icon.sh.
+
+Use case: logo-brand.
+Create one polished logo concept for AppleCam, an independent native macOS app that uses physical green-screen keying to make a virtual camera for video calls.
+Asset: a standalone square macOS app icon, centered, with true transparent space outside the icon silhouette, generous even exterior margins. No presentation board or mockup.
+Design: an exceptionally clean, memorable camera mark on a dark graphite rounded-square tile. The camera body is a vivid chroma-green rounded rectangular screen; a slightly offset second panel behind it subtly communicates background replacement. A bold circular dark lens with a crisp pale inner highlight anchors the front panel. A simple small right-facing camera wedge completes the recognizable video-camera silhouette. Aim for one strong unified symbol rather than multiple separate objects. Refined optical balance, bold geometry, few shapes, clear at small Dock sizes. Restrained shallow depth and soft studio highlights give the icon a premium native Mac feel without turning it into a literal camera illustration.
+Green is the signature color because the product keys a physical green screen. Graphite and a little warm white provide contrast. Keep surfaces mostly flat and crisp, with only subtle dimensional lighting.
+No text, no letters, no Apple fruit symbol, no rainbow, no checkerboard pattern, no busy scenery, no tiny details, no watermark, no extra icons. This is an original independent product identity, not an imitation of Apple's FaceTime icon.

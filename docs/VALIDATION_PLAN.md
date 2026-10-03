@@ -226,3 +226,17 @@ Owner acceptance after Finder replacement:
 6. Send to AppleCam, reselect it in Meet/Teams, and inspect the image at two supported format choices. Check proportions, motion, glasses and hair. Receiving applications may negotiate a smaller resolution/rate; output must remain processed.
 
 Build 12 distribution: notarized export accepted; strict deep signature verification, stapled ticket, Gatekeeper and producer signature requirement checks passed. Host and embedded extension both report build 12. Artifact: `build/Notarized-Profiles-12/AppleCam.app`. See `artifacts/verification/camera-profiles-build-12.json`.
+
+### Build 13 — approved app logo (2026-10-03)
+
+The owner approved the green-camera logo. The original PNG and generation prompt are preserved in `artifacts/branding/`; `scripts/build-app-icon.sh` packages standard and Retina icon sizes into `AppleCam/Resources/AppIcon.icns`. The host bundle declares and includes this resource, and the window header displays the same icon. README branding uses the original PNG. Camera and extension behavior are unchanged from build 12.
+
+All 88 existing tests passed. The unsigned universal Debug build and Release archive succeeded. `Tests/Integration/verify-app-icon.swift` resolves the icon from the built bundle and checks decoding at 16, 32, 64, 128, 256, 512 and 1024 pixels, square dimensions, alpha and transparent corners. A rendered 128-pixel rendition was visually inspected. Icon appearance is an asset/integration check rather than application logic requiring a new unit test. These checks do not launch the app or touch user settings; installed Dock/Finder cache refresh remains a manual check after replacement.
+
+Build 13 distribution: notarized export, strict signatures, stapled ticket, Gatekeeper and producer signature requirement checks passed. Icon verification also passed against the final notarized bundle, with bundled bytes matching the source ICNS. Artifact: `build/Notarized-Logo-13/AppleCam.app`. See `artifacts/verification/app-logo-build-13.json`.
+
+### Build 14 — About-panel slogan (2026-10-03)
+
+AppleCam → About AppleCam opens the standard macOS About panel with the owner-supplied slogan, “Simple virtual camera for green screens”, in its credits area. The standard app logo and version remain supplied by the bundle. The change adds no camera or persistence logic; the signed Release archive verifies the SwiftUI command and public AppKit API compile. No unit test is added for a literal UI string; visible panel presentation is a manual check after the owner replaces the app. The installed app was not launched or replaced for this change.
+
+Build 14 distribution: notarized export, strict deep signatures, stapled ticket, Gatekeeper and bundled icon checks passed. Artifact: `build/Notarized-About-14/AppleCam.app`.

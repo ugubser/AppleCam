@@ -19,3 +19,5 @@ print('Tests, unsigned Debug build, and embedded bundle layout passed.')
 print('Logs: work/tests.log and work/build.log')
 print('This does not verify signing, camera extension activation, or Teams delivery.')
 PY
+
+swift Tests/Integration/verify-app-icon.swift build/DerivedData/Build/Products/Debug/AppleCam.app

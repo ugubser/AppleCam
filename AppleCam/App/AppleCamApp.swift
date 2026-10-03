@@ -9,6 +9,15 @@ struct AppleCamApp: App {
         Window("AppleCam — Development Preview", id: "controls") {
             CameraControls(model: model)
         }.defaultSize(width: 800, height: 940)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About AppleCam") {
+                    NSApp.orderFrontStandardAboutPanel(options: [
+                        .credits: NSAttributedString(string: "Simple virtual camera for green screens")
+                    ])
+                }
+            }
+        }
         MenuBarExtra("AppleCam", systemImage: "video.badge.waveform") {
             MenuActions(model: model)
         }
@@ -32,6 +41,8 @@ private struct CameraControls: View {
         ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
+                Image("AppIcon").resizable().scaledToFit()
+                    .frame(width: 56, height: 56).accessibilityHidden(true)
                 VStack(alignment: .leading) {
                     Text("AppleCam").font(.largeTitle.bold())
                     Text(model.captureConfiguration.label).foregroundStyle(.secondary)
