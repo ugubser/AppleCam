@@ -1,0 +1,40 @@
+{
+  "recorded_at": "2026-10-02T15:44:26.655810+00:00",
+  "version": "0.1.0",
+  "build": 9,
+  "artifact": "build/Notarized-Flow-9/AppleCam.app",
+  "notarization": "Accepted",
+  "strict_signature_stapler_gatekeeper": "passed",
+  "signature_requirement_checks": "passed",
+  "unit_media_tests": 60,
+  "synthetic_producer_fps": 29.854158702875363,
+  "changes": [
+    "Live green-screen enable/disable and background replacement",
+    "Live local/published destination switching",
+    "Allow Apple effects when green screen is explicitly off",
+    "Pause processed output on effects conflict while retaining capture and automatically resume keyed output",
+    "Request the public effects panel after first live camera frame; start local preview when stopped",
+    "Capture-rate display remains live while output is paused"
+  ],
+  "live_checks": [
+    "BRIO local preview with Portrait enabled",
+    "Live image picker on green-screen enable",
+    "Green-screen conflict pauses picture with camera still active",
+    "Explicit off resumes preview without stopping",
+    "Test instance stopped and closed"
+  ],
+  "panel_check": "Control Center logs confirm request for AppleCam active camera with available effects. Accessibility inspection timed out; visible panel presentation and user toggles need owner confirmation.",
+  "installed_app": "Build 8 left running, unchanged. User performs Finder replacement.",
+  "extension": "Existing enabled extension compatible; no transport or authorization changes.",
+  "limitations": [
+    "Meeting end-to-end switches not tested in a live call",
+    "Live BRIO remained around 15 fps; not resolved by this flow change",
+    "Settings and background remain session-only",
+    "No real camera image saved or published during validation"
+  ],
+  "source_sha256": {
+    "AppleCam/App/AppleCamApp.swift": "e9b0883b1a612fdd03910beebb6e8bdb721b0f5c52cf44529a8898ccc5a35c58",
+    "AppleCam/Capture/FrameProducer.swift": "02ed5b08e1da1b9f2695d5f1c6f4f9768a037e4475937451b44227186849f668",
+    "Tests/Media/FrameProducerTests.swift": "3bc5a19215ea57b8b3055df86edfab7ed4a4df9f5061eb9085e7ba87dd04594a"
+  }
+}

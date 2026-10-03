@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-10-02T13:14:54.103492+00:00",
+  "version": "0.1.0",
+  "build": 8,
+  "artifact": "build/Notarized-Calibration-8/AppleCam.app",
+  "notarization": "Accepted",
+  "strict_signature_stapler_gatekeeper": "passed",
+  "signature_requirement_checks": "passed",
+  "unit_media_tests": 55,
+  "synthetic_producer_fps": 29.797551709373685,
+  "processing_ms_default": 0.531600694618343,
+  "processing_ms_six_samples_fill_protection_mask": 0.6008736114987793,
+  "processing_measurement": "5 warm-up frames, 60 measured at 1080p; capture/preview/browser excluded",
+  "native_ui_checks": [
+    "synthetic fixture background import",
+    "mask selected and visually verified",
+    "replace colour by sampling original pattern while in Mask view",
+    "add a second sample",
+    "remove second sample",
+    "switch back to Picture",
+    "stop synthetic preview",
+    "final notarized layout verified with accessible Start/Stop above controls"
+  ],
+  "routing_test": "Actual producer sample-buffer pixels stay composite while local preview switches Mask/Picture; original green remains available to sampler. In-memory transport used; no browser claim.",
+  "installed_app": "Existing installed app left running and unchanged; owner performs Finder replacement.",
+  "extension": "Existing enabled extension remains compatible; update is in host app.",
+  "limitations": [
+    "Live hair/chair quality requires owner calibration",
+    "Hole filling may close real mesh openings",
+    "Protection may retain dim/desaturated backdrop",
+    "Settings and image remain session-only",
+    "Observed earlier 15 fps live capture not diagnosed by these changes",
+    "No real camera image saved as an artifact"
+  ]
+}

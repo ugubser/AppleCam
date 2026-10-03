@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-10-02T16:08:48.813678+00:00",
+  "version": "0.1.0",
+  "build": 10,
+  "artifact": "build/Notarized-Effects-10/AppleCam.app",
+  "notarization": "Accepted",
+  "strict_signature_stapler_gatekeeper": "passed",
+  "signature_requirement_checks": "passed",
+  "unit_media_tests": 60,
+  "synthetic_producer_fps": 29.931242946111198,
+  "changes": [
+    "Removed all Apple effect state reads and publication gates",
+    "Removed effects-blocked UI state, pause text, warnings and sampling restrictions",
+    "Preserved live keyer, background and destination switching and public effects button"
+  ],
+  "verification": [
+    "60 automated tests passed including actual keyed frames, continuous publication, preview and live sampling/calibration",
+    "Release archive compiled",
+    "Source check found no remaining Apple effects gate or conflict messages in application/tests"
+  ],
+  "runtime_scope": "Existing installed build 9 was actively sending video and was left untouched. No extra physical-camera session, effect changes or meeting test was performed. Owner reports effects combination works; this release removes the application restriction.",
+  "extension": "Existing enabled extension compatible; host change only.",
+  "installed_app": "User performs Finder replacement when ready. Settings remain session-only.",
+  "source_sha256": {
+    "AppleCam/App/AppleCamApp.swift": "16630c41e917045c41a78ee3350be3fee47cbbd9a711451fc7306a0c62f04cbd",
+    "AppleCam/Capture/FrameProducer.swift": "c7770a341c2889fe8977771481c1f00d6f181e3a6f37c98fbd39eb396b058372",
+    "Tests/Media/FrameProducerTests.swift": "12b65f22801d3067bfd10dfb5991172a24c27a47d687367e27c33486a4d7b53d"
+  }
+}

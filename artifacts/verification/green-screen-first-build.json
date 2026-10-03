@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-10-02T11:14:32.208727+00:00",
+  "stage": "First M1 processing implementation; milestone acceptance pending",
+  "automated_tests": {
+    "passed": 41,
+    "failed": 0
+  },
+  "builds": {
+    "unsigned_debug": "passed arm64 and x86_64",
+    "signed_debug": "passed arm64",
+    "strict_signature_check": "passed",
+    "user_selected_read_only_entitlement": "verified"
+  },
+  "gpu_mean_ms_1080p_60_warmed_frames": 0.39591736131114885,
+  "synthetic_processed_producer_fps": 29.889728074798786,
+  "live_brio": {
+    "dimensions": [
+      1920,
+      1080
+    ],
+    "green_screen_enabled": true,
+    "background": "artifacts/fixtures/AppleCam-sample-background.png",
+    "observed_capture_fps": 30.0,
+    "observed_preview_update_fps": 30.2,
+    "later_counter_sample": {
+      "capture_fps": 29.0,
+      "preview_update_fps": 30.0
+    }
+  },
+  "measurement_boundary": "GPU benchmark excludes capture/preview; live counters measure host callbacks and UI updates, not Teams or monitor presentation",
+  "private_camera_frames_saved": false,
+  "pending": [
+    "Owner tuning and real glasses/hair/motion review",
+    "Additional fine-line and motion fixtures",
+    "Extension activation and processed receiver delivery",
+    "30-minute endurance and latency qualification",
+    "Persistent settings and background storage"
+  ],
+  "notarization_archive_contains_green_screen": false,
+  "sampler_regression_followup": {
+    "passed": true,
+    "synthetic_first_interval_fps": 28.85356455335144,
+    "context": "Run concurrently with live BRIO app; first interval includes producer startup. Not a sustained throughput qualification."
+  }
+}

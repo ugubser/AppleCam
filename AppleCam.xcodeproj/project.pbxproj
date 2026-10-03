@@ -1,0 +1,496 @@
+// !$*UTF8*$!
+{
+"classes" = {
+};
+"objectVersion" = "56";
+"archiveVersion" = "1";
+"objects" = {
+"2C61631D95A74CF0907ED6D3" = { "isa" = "PBXFileReference"; "path" = "AppleCam/App/CameraModel.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"2CF2204CBA0748E78D229BB9" = { "isa" = "PBXBuildFile"; "fileRef" = "2C61631D95A74CF0907ED6D3"; };
+"A5142732D08F4AC2A7CEC7B9" = { "isa" = "PBXFileReference"; "path" = "Shared/SavedPreferences.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"E5C45BF0537347EDAF60C12C" = { "isa" = "PBXBuildFile"; "fileRef" = "A5142732D08F4AC2A7CEC7B9"; };
+"96353E66A3698164751EDC32" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "E782C7F632F4F418F1720515";
+};
+"33079164109A36AED028AF91" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "7680E48793D63431C053E91F";
+};
+"E320DF6A43F2564DCB4B2128" = {
+"isa" = "PBXTargetDependency";
+"target" = "0EC720F5DA4708613C1C6E4B";
+"targetProxy" = "6F47968B049B63849C2811BC";
+};
+"AC44A5EE06496B21A17CA082" = {
+"productType" = "com.apple.product-type.application";
+"productReference" = "763D774377779C412BB71F6F";
+"buildConfigurationList" = "E1AEFE3DD38C65EA60E41065";
+"productName" = "AppleCam";
+"isa" = "PBXNativeTarget";
+"buildPhases" = (
+"D8AFF257B45D0C513672EC45",
+"91024282FFD499F5807DB5BC",
+"020D920C741AAE2795AAA476",
+);
+"dependencies" = (
+"E320DF6A43F2564DCB4B2128",
+);
+"name" = "AppleCam";
+"buildRules" = (
+);
+};
+"EC11DC0A215FFF8863263551" = {
+"path" = "Shared/CameraError.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"50F32E1998F39C0207E1EB4D" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "135C6F126FCC23FEB1051A53";
+};
+"CED6E62D647AC7B42DB8A27C" = {
+"path" = "AppleCamCameraExtension/main.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"32B578C05205B82BDC45A052" = {
+"path" = "AppleCamCameraExtension/CameraProvider.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"94072B285E7225BA78778349" = {
+"isa" = "XCConfigurationList";
+"defaultConfigurationIsVisible" = "0";
+"defaultConfigurationName" = "Debug";
+"buildConfigurations" = (
+"E86F2AF7E837C7CFEB7216E6",
+"13729D2EB40827337DD26FD4",
+);
+};
+"0EC720F5DA4708613C1C6E4B" = {
+"productType" = "com.apple.product-type.system-extension";
+"productReference" = "9337DD4B7D6FB66FF76C0718";
+"buildConfigurationList" = "94072B285E7225BA78778349";
+"productName" = "com.vanguardsignals.AppleCam.CameraExtension";
+"isa" = "PBXNativeTarget";
+"buildPhases" = (
+"1CDF1F802114FD4953B8BCF8",
+"F4DE96996B3C13B2BEDE1B20",
+);
+"dependencies" = (
+);
+"name" = "AppleCamCameraExtension";
+"buildRules" = (
+);
+};
+"9F1C542B10A779EB6C6C5E71" = {
+"path" = "Config/App-Info.plist";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"sourceTree" = "<group>";
+};
+"A67D62E8DB1DC8FBCDAF9B63" = {
+"path" = "Config/App.entitlements";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"sourceTree" = "<group>";
+};
+"B72E6FE81A11CC048E5DE807" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "20C89437497CB9EBCA778DE5";
+};
+"20C89437497CB9EBCA778DE5" = {
+"path" = "Shared/CameraContract.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"135C6F126FCC23FEB1051A53" = {
+"path" = "AppleCam/Capture/FrameProducer.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"6F47968B049B63849C2811BC" = {
+"isa" = "PBXContainerItemProxy";
+"containerPortal" = "985959785319747668373CC6";
+"remoteGlobalIDString" = "0EC720F5DA4708613C1C6E4B";
+"remoteInfo" = "AppleCamCameraExtension";
+"proxyType" = "1";
+};
+"EB814BE3CA3B78C0734C5605" = {
+"isa" = "PBXGroup";
+"sourceTree" = "<group>";
+"children" = (
+"2C61631D95A74CF0907ED6D3",
+"A5142732D08F4AC2A7CEC7B9",
+"4C90FD0BC29FA60B4B9B1974",
+"13BDC4C58E87CE0D35AD7B3C",
+"135C6F126FCC23FEB1051A53",
+"C7BCA3C3965F5D88DF9B6A7C",
+"32B578C05205B82BDC45A052",
+"CED6E62D647AC7B42DB8A27C",
+"20C89437497CB9EBCA778DE5",
+"EC11DC0A215FFF8863263551",
+"E782C7F632F4F418F1720515",
+"9F1C542B10A779EB6C6C5E71",
+"A67D62E8DB1DC8FBCDAF9B63",
+"390005A8D8635E484AC52242",
+"E256EC0EB7CB86091C7EB967",
+"4EDC8BFAFC6BD936B849F38C",
+"7680E48793D63431C053E91F",
+"D53380103A9FE396E45A524B",
+"0E39D8B58FD3218CC6AEF0F5",
+);
+};
+"4EDC8BFAFC6BD936B849F38C" = {
+"isa" = "PBXGroup";
+"name" = "Products";
+"children" = (
+"763D774377779C412BB71F6F",
+"9337DD4B7D6FB66FF76C0718",
+);
+"sourceTree" = "<group>";
+};
+"DBD6EF96DBD6DC51B1B5DC06" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "EC11DC0A215FFF8863263551";
+};
+"F4DE96996B3C13B2BEDE1B20" = {
+"isa" = "PBXFrameworksBuildPhase";
+"buildActionMask" = "2147483647";
+"files" = (
+);
+"runOnlyForDeploymentPostprocessing" = "0";
+};
+"E782C7F632F4F418F1720515" = {
+"path" = "Shared/QueueBudget.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"FA5AE57A46C445BFB5C3C10D" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "32B578C05205B82BDC45A052";
+};
+"E86F2AF7E837C7CFEB7216E6" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"CODE_SIGN_ENTITLEMENTS" = "Config/Extension.entitlements";
+"COMBINE_HIDPI_IMAGES" = "YES";
+"ENABLE_APP_SANDBOX" = "YES";
+"INFOPLIST_FILE" = "Config/Extension-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "com.vanguardsignals.AppleCam.CameraExtension";
+"SKIP_INSTALL" = "YES";
+"LD_RUNPATH_SEARCH_PATHS" = (
+"$(inherited)",
+"@executable_path/../Frameworks",
+);
+"PRODUCT_NAME" = "com.vanguardsignals.AppleCam.CameraExtension";
+};
+};
+"40603BA3B5307A2F7A4A4916" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "E782C7F632F4F418F1720515";
+};
+"020D920C741AAE2795AAA476" = {
+"buildActionMask" = "2147483647";
+"dstSubfolderSpec" = "16";
+"isa" = "PBXCopyFilesBuildPhase";
+"runOnlyForDeploymentPostprocessing" = "0";
+"dstPath" = "$(CONTENTS_FOLDER_PATH)/Library/SystemExtensions";
+"name" = "Embed Camera Extension";
+"files" = (
+"8681430AAA98DAD98182D695",
+);
+};
+"B8AAA01621B56086EA0EA987" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "CED6E62D647AC7B42DB8A27C";
+};
+"5F539F8CDC7E85EE70093175" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "13BDC4C58E87CE0D35AD7B3C";
+};
+"7680E48793D63431C053E91F" = {
+"path" = "Shared/PreviewDelivery.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"91024282FFD499F5807DB5BC" = {
+"isa" = "PBXFrameworksBuildPhase";
+"buildActionMask" = "2147483647";
+"files" = (
+);
+"runOnlyForDeploymentPostprocessing" = "0";
+};
+"73EBF6644258C120893E685D" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+"DEBUG_INFORMATION_FORMAT" = "dwarf";
+"DEVELOPMENT_TEAM" = "M8QBZK948M";
+"MARKETING_VERSION" = "0.1.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"CODE_SIGN_IDENTITY" = "Apple Development";
+"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+"CODE_SIGN_STYLE" = "Automatic";
+"SDKROOT" = "macosx";
+"SWIFT_VERSION" = "5.0";
+"ENABLE_HARDENED_RUNTIME" = "YES";
+"CURRENT_PROJECT_VERSION" = "11";
+};
+};
+"94317301ACBFD4C7A4B09CFF" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "EC11DC0A215FFF8863263551";
+};
+"4C90FD0BC29FA60B4B9B1974" = {
+"path" = "AppleCam/App/AppleCamApp.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"390005A8D8635E484AC52242" = {
+"path" = "Config/Extension-Info.plist";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"sourceTree" = "<group>";
+};
+"9337DD4B7D6FB66FF76C0718" = {
+"path" = "com.vanguardsignals.AppleCam.CameraExtension.systemextension";
+"isa" = "PBXFileReference";
+"includeInIndex" = "0";
+"explicitFileType" = "wrapper.system-extension";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"E256EC0EB7CB86091C7EB967" = {
+"path" = "Config/Extension.entitlements";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "text.plist.xml";
+"sourceTree" = "<group>";
+};
+"13729D2EB40827337DD26FD4" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"CODE_SIGN_ENTITLEMENTS" = "Config/Extension.entitlements";
+"COMBINE_HIDPI_IMAGES" = "YES";
+"ENABLE_APP_SANDBOX" = "YES";
+"INFOPLIST_FILE" = "Config/Extension-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "com.vanguardsignals.AppleCam.CameraExtension";
+"SKIP_INSTALL" = "YES";
+"LD_RUNPATH_SEARCH_PATHS" = (
+"$(inherited)",
+"@executable_path/../Frameworks",
+);
+"PRODUCT_NAME" = "com.vanguardsignals.AppleCam.CameraExtension";
+};
+};
+"F4B5A22AF086CAF9D1ABC372" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "C7BCA3C3965F5D88DF9B6A7C";
+};
+"B00CCDD09424E369308D67FA" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Debug";
+"buildSettings" = {
+"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+"COMBINE_HIDPI_IMAGES" = "YES";
+"ENABLE_APP_SANDBOX" = "YES";
+"INFOPLIST_FILE" = "Config/App-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "com.vanguardsignals.AppleCam";
+"SKIP_INSTALL" = "NO";
+"LD_RUNPATH_SEARCH_PATHS" = (
+"$(inherited)",
+"@executable_path/../Frameworks",
+);
+"PRODUCT_NAME" = "AppleCam";
+};
+};
+"E1AEFE3DD38C65EA60E41065" = {
+"isa" = "XCConfigurationList";
+"defaultConfigurationIsVisible" = "0";
+"defaultConfigurationName" = "Debug";
+"buildConfigurations" = (
+"B00CCDD09424E369308D67FA",
+"1B104479E55E37CF8A63CBDF",
+);
+};
+"1CDF1F802114FD4953B8BCF8" = {
+"isa" = "PBXSourcesBuildPhase";
+"buildActionMask" = "2147483647";
+"files" = (
+"FA5AE57A46C445BFB5C3C10D",
+"B8AAA01621B56086EA0EA987",
+"B72E6FE81A11CC048E5DE807",
+"DBD6EF96DBD6DC51B1B5DC06",
+"96353E66A3698164751EDC32",
+"EFDE6BF8183DA580A8F11A94",
+"AF1EBC92370D9F98282DE033",
+);
+"runOnlyForDeploymentPostprocessing" = "0";
+};
+"763D774377779C412BB71F6F" = {
+"path" = "AppleCam.app";
+"isa" = "PBXFileReference";
+"includeInIndex" = "0";
+"explicitFileType" = "wrapper.application";
+"sourceTree" = "BUILT_PRODUCTS_DIR";
+};
+"D8AFF257B45D0C513672EC45" = {
+"isa" = "PBXSourcesBuildPhase";
+"buildActionMask" = "2147483647";
+"files" = (
+"2CF2204CBA0748E78D229BB9",
+"E5C45BF0537347EDAF60C12C",
+"60572DCC3B737CB4D481E86C",
+"5F539F8CDC7E85EE70093175",
+"50F32E1998F39C0207E1EB4D",
+"F4B5A22AF086CAF9D1ABC372",
+"B2E43ADA7CCABE1C3080E6D9",
+"94317301ACBFD4C7A4B09CFF",
+"40603BA3B5307A2F7A4A4916",
+"33079164109A36AED028AF91",
+"453B0C7A5344AF09D6BAD5CF",
+"1DFB6697979C9F916AB3BE85",
+);
+"runOnlyForDeploymentPostprocessing" = "0";
+};
+"1B104479E55E37CF8A63CBDF" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"CODE_SIGN_ENTITLEMENTS" = "Config/App.entitlements";
+"COMBINE_HIDPI_IMAGES" = "YES";
+"ENABLE_APP_SANDBOX" = "YES";
+"INFOPLIST_FILE" = "Config/App-Info.plist";
+"PRODUCT_BUNDLE_IDENTIFIER" = "com.vanguardsignals.AppleCam";
+"SKIP_INSTALL" = "NO";
+"LD_RUNPATH_SEARCH_PATHS" = (
+"$(inherited)",
+"@executable_path/../Frameworks",
+);
+"PRODUCT_NAME" = "AppleCam";
+};
+};
+"985959785319747668373CC6" = {
+"buildConfigurationList" = "F1EC23546E9F76EBA9380829";
+"targets" = (
+"AC44A5EE06496B21A17CA082",
+"0EC720F5DA4708613C1C6E4B",
+);
+"developmentRegion" = "en";
+"knownRegions" = (
+"en",
+"Base",
+);
+"isa" = "PBXProject";
+"compatibilityVersion" = "Xcode 14.0";
+"productRefGroup" = "4EDC8BFAFC6BD936B849F38C";
+"projectDirPath" = "";
+"attributes" = {
+"LastUpgradeCheck" = "2700";
+"BuildIndependentTargetsInParallel" = "YES";
+};
+"hasScannedForEncodings" = "0";
+"projectRoot" = "";
+"mainGroup" = "EB814BE3CA3B78C0734C5605";
+};
+"0B0C687DF8B6B8DC790B519C" = {
+"isa" = "XCBuildConfiguration";
+"name" = "Release";
+"buildSettings" = {
+"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+"DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
+"DEVELOPMENT_TEAM" = "M8QBZK948M";
+"MARKETING_VERSION" = "0.1.0";
+"CLANG_ENABLE_MODULES" = "YES";
+"CODE_SIGN_IDENTITY" = "Apple Development";
+"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+"CODE_SIGN_STYLE" = "Automatic";
+"SDKROOT" = "macosx";
+"SWIFT_VERSION" = "5.0";
+"ENABLE_HARDENED_RUNTIME" = "YES";
+"CURRENT_PROJECT_VERSION" = "11";
+};
+};
+"C7BCA3C3965F5D88DF9B6A7C" = {
+"path" = "AppleCam/Transport/SinkTransport.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"EFDE6BF8183DA580A8F11A94" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "7680E48793D63431C053E91F";
+};
+"F1EC23546E9F76EBA9380829" = {
+"isa" = "XCConfigurationList";
+"defaultConfigurationIsVisible" = "0";
+"defaultConfigurationName" = "Debug";
+"buildConfigurations" = (
+"73EBF6644258C120893E685D",
+"0B0C687DF8B6B8DC790B519C",
+);
+};
+"8681430AAA98DAD98182D695" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "9337DD4B7D6FB66FF76C0718";
+"settings" = {
+"ATTRIBUTES" = (
+"CodeSignOnCopy",
+"RemoveHeadersOnCopy",
+);
+};
+};
+"B2E43ADA7CCABE1C3080E6D9" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "20C89437497CB9EBCA778DE5";
+};
+"60572DCC3B737CB4D481E86C" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "4C90FD0BC29FA60B4B9B1974";
+};
+"13BDC4C58E87CE0D35AD7B3C" = {
+"path" = "AppleCam/App/ExtensionManager.swift";
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"sourceTree" = "<group>";
+};
+"D53380103A9FE396E45A524B" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "Shared/ChromaKey.swift";
+"sourceTree" = "<group>";
+};
+"453B0C7A5344AF09D6BAD5CF" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "D53380103A9FE396E45A524B";
+};
+"AF1EBC92370D9F98282DE033" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "D53380103A9FE396E45A524B";
+};
+"0E39D8B58FD3218CC6AEF0F5" = {
+"isa" = "PBXFileReference";
+"lastKnownFileType" = "sourcecode.swift";
+"path" = "AppleCam/Processing/GreenScreenProcessor.swift";
+"sourceTree" = "<group>";
+};
+"1DFB6697979C9F916AB3BE85" = {
+"isa" = "PBXBuildFile";
+"fileRef" = "0E39D8B58FD3218CC6AEF0F5";
+};
+};
+"rootObject" = "985959785319747668373CC6";
+}

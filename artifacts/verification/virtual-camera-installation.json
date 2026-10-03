@@ -1,0 +1,47 @@
+{
+  "recorded_at": "2026-10-02T11:39:27.981229+00:00",
+  "version": "0.1.0",
+  "build": 6,
+  "archive": "build/AppleCam-Transport-6.xcarchive",
+  "notarization": "Accepted",
+  "notarization_issues": null,
+  "strict_signature_verification": "passed app and embedded extension",
+  "stapler_validation": "passed",
+  "gatekeeper": "accepted Notarized Developer ID",
+  "installed_app": "/Applications/AppleCam.app",
+  "extension_activation": "activated enabled",
+  "current_tuned_preview": "Original process exited before handover; no persistent settings available",
+  "transport_delivery": "Owner confirmed test-pattern delivery after disabling Apple Background replacement, then confirmed BRIO/green-screen delivery after the build 7 timing fix.",
+  "browser_selection": "manual; browser automation URL policy blocks internal Chrome settings",
+  "SIP": "unchanged; no reboot or logout performed",
+  "updated_at": "2026-10-02T12:42:54.933215+00:00",
+  "avfoundation_discovery": {
+    "devices_named_AppleCam": 1,
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "receiver": "Google Meet in Chrome; owner-reported functional success. Teams and endurance qualification remain pending.",
+  "next_diagnostic_build": null,
+  "prepared_diagnostic": {
+    "build": 6,
+    "path": "build/Notarized-Transport-6/AppleCam.app",
+    "notarization": "Accepted",
+    "signature_ticket_gatekeeper": "passed",
+    "unit_media_tests": 41,
+    "installation": "Installed and activated; test-pattern delivery confirmed",
+    "purpose": "metadata-only delivery diagnosis; not a verified black-picture fix"
+  },
+  "prepared_fix": {
+    "build": 7,
+    "scope": "Host app: session-to-host clock conversion; discard isolated expired frames; stop after 2 seconds of continuously expired frames; readable validation errors",
+    "unit_media_tests": 48,
+    "live_BRIO_validation": "Passed owner-reported functional check in Google Meet; no independent duration, frame-rate or latency measurement in this check.",
+    "extension_compatibility": "Existing activated build 6 remains compatible; no transport contract change",
+    "path": "build/Notarized-Transport-7/AppleCam.app",
+    "notarization": "Accepted",
+    "signature_ticket_gatekeeper": "passed",
+    "signature_requirement_tests": "passed"
+  },
+  "owner_confirmation": "Owner reports \"this works\" after the build 7 BRIO/green-screen-to-Google-Meet retry instructions."
+}

@@ -1,0 +1,57 @@
+{
+  "recorded_at": "2026-10-02T08:57:25.702847+00:00",
+  "agreement_blocker": "resolved",
+  "device_registration": "completed by Xcode automatic provisioning",
+  "debug_build": "passed",
+  "release_archive": "passed",
+  "installed": false,
+  "notarization": "uploaded; Apple processing",
+  "bundles": [
+    {
+      "identifier": "com.vanguardsignals.AppleCam",
+      "signature_valid": true,
+      "team_id": "M8QBZK948M",
+      "sandbox": true,
+      "app_groups": [
+        "M8QBZK948M.com.vanguardsignals.AppleCam"
+      ],
+      "mach_service": null
+    },
+    {
+      "identifier": "com.vanguardsignals.AppleCam.CameraExtension",
+      "signature_valid": true,
+      "team_id": "M8QBZK948M",
+      "sandbox": true,
+      "app_groups": [
+        "M8QBZK948M.com.vanguardsignals.AppleCam"
+      ],
+      "mach_service": "M8QBZK948M.com.vanguardsignals.AppleCam.CameraExtension"
+    }
+  ],
+  "notarization_upload": "passed on retry",
+  "notarization_initial_error": "HTTP 403 agreement state; cleared on retry",
+  "SIP": "enabled",
+  "distribution_export_options": "Config/DeveloperIDExport.plist",
+  "submitted_distribution_bundles": [
+    {
+      "bundle": "com.vanguardsignals.AppleCam",
+      "signature_valid": true,
+      "developer_id_signature": true,
+      "hardened_runtime": true,
+      "secure_timestamp": true,
+      "team_id": "M8QBZK948M",
+      "executable_sha256": "16aa3b218454d60eac6c9f0b1b89917395c1b6d0ac118c7a64d671a77dc9c2fc"
+    },
+    {
+      "bundle": "com.vanguardsignals.AppleCam.CameraExtension",
+      "signature_valid": true,
+      "developer_id_signature": true,
+      "hardened_runtime": true,
+      "secure_timestamp": true,
+      "team_id": "M8QBZK948M",
+      "executable_sha256": "ddc8573be31b210c3ec8756bffa8eac884d4894ba6e3c55a45b0c8d5b1535ce4"
+    }
+  ],
+  "last_export_check_at": "2026-10-02T09:02:30.658089+00:00",
+  "last_export_result": "Apple reports archive processing and not ready for distribution"
+}

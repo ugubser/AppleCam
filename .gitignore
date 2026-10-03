@@ -1,0 +1,56 @@
+# macOS and Xcode local state
+.DS_Store
+DerivedData/
+build/
+.build/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Disposable work and generated distributions
+work/
+dist/
+*.xcarchive/
+*.dSYM/
+*.app/
+*.dmg
+*.pkg
+artifacts/releases/
+artifacts/private/
+Tests/Fixtures/private/
+
+# Credentials and signing exports
+.env
+.env.*
+!.env.example
+*.local.xcconfig
+secrets/
+credentials/
+*.p12
+*.pfx
+*.pem
+*.key
+*.keychain
+*.keychain-db
+*.mobileprovision
+*.provisionprofile
+
+# Private debugging captures
+*.trace/
+*.xcresult/
+*.log
+
+# Swift Package Manager local configuration
+.swiftpm/configuration/
+
+# Additional signing and distribution artifacts
+*.p8
+*.cer
+*.der
+*.systemextension/
+*.zip
+
+# Local saved preferences and imported background copies
+/preferences.json
+*.image

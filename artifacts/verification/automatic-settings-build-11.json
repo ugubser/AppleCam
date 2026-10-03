@@ -1,0 +1,42 @@
+{
+  "recorded_at": "2026-10-02T16:45:23.209855+00:00",
+  "version": "0.1.0",
+  "build": 11,
+  "artifact": "build/Notarized-Autosave-11/AppleCam.app",
+  "notarization": "Accepted",
+  "strict_signature_stapler_gatekeeper": "passed",
+  "signature_requirement_checks": "passed",
+  "unit_media_tests": 71,
+  "new_persistence_tests": 11,
+  "synthetic_producer_fps": 29.849943092700407,
+  "saved": [
+    "camera selection",
+    "background local managed copy",
+    "primary and up to five additional sampled RGB colours",
+    "tolerance",
+    "softness",
+    "foreground protection",
+    "hole filling",
+    "spill",
+    "green-screen mode",
+    "local Picture/Mask view"
+  ],
+  "not_saved": [
+    "camera frames",
+    "capture running state",
+    "publication running state",
+    "macOS effect settings"
+  ],
+  "storage": "Versioned atomic JSON and UUID-named imported image in sandbox Application Support/AppleCam. Image copied once per import, small JSON saved on each preference edit.",
+  "verification": "Round-trip tests use actual CameraModel observers and fresh model instances with isolated temporary directories. Missing image/camera, corrupt settings, unsupported version, save failure and transaction cleanup are covered. No installed app session or user settings were changed.",
+  "runtime_limit": "Full signed app quit/relaunch remains owner acceptance; model restoration and sandbox-compatible code path compiled and tested.",
+  "upgrade": "First setup required after upgrading from build 10. Existing extension remains compatible.",
+  "source_sha256": {
+    "Shared/SavedPreferences.swift": "02efe4c4156bf0bb128a2c82fd7fc934ec5024adc6bb30c2f60da45593dacb2a",
+    "Shared/ChromaKey.swift": "ec0c7a47a48b6a5e33b44bb29995e9c1bde8b2c238459af40d3cb6dbbbefd586",
+    "AppleCam/App/CameraModel.swift": "00d03cb14eb8e3bcb210c52878ea4da30def8979993834873bb01004e1f3c7c6",
+    "AppleCam/App/AppleCamApp.swift": "82a9587eb534b2721d484bad03d536fff3a3b35f012d2c52c936e106ecc27513",
+    "Tests/Unit/PreferencesStoreTests.swift": "ab24c83d5d42c5e701505e6c599dc8e0d3f4a6097ead503b3470a4f1ae2c73b7",
+    "Tests/Media/CameraPreferencesTests.swift": "7822fbc28752b1bfae3421422bd177725a6a27c342caa03387f2dcc7c6f46d6b"
+  }
+}

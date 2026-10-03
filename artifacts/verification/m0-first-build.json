@@ -1,0 +1,85 @@
+{
+  "recorded_at": "2026-10-02T08:41:14.458385+00:00",
+  "milestone": "M0",
+  "milestone_passed": false,
+  "product_ready_for_calls": false,
+  "build": {
+    "configuration": "Debug",
+    "distribution_signing": false,
+    "architectures": [
+      "arm64",
+      "x86_64"
+    ],
+    "app": "passed",
+    "extension": "passed",
+    "embedded_bundle_layout": "passed",
+    "compiler_errors": 0,
+    "known_build_warnings": [
+      "App Intents metadata extraction skipped: no AppIntents dependency"
+    ],
+    "sha256": {
+      "build/DerivedData/Build/Products/Debug/AppleCam.app/Contents/MacOS/AppleCam": "2641bf4bc114cbbfc98185ad3aa94997e62eb72f593257c2012290afe8fd6c66",
+      "build/DerivedData/Build/Products/Debug/AppleCam.app/Contents/Library/SystemExtensions/com.vanguardsignals.AppleCam.CameraExtension.systemextension/Contents/MacOS/com.vanguardsignals.AppleCam.CameraExtension": "83d8e42a2969b3028978d461d599c0e3dddfa7662498b55b17991a377949642a"
+    }
+  },
+  "automated_tests": {
+    "passed": 14,
+    "failed": 0,
+    "core_and_queue": 11,
+    "synthetic_media": 3,
+    "command": "swift test",
+    "physical_camera_opened": false,
+    "coverage": [
+      "frame format and timestamp validation",
+      "expired/replayed frame rejection",
+      "consumer demand reducer",
+      "bounded queue admission and stalled sink",
+      "real Core Image 1080p synthetic preview",
+      "stop behavior",
+      "repeated producer release",
+      "missing-camera failure without automatic substitution"
+    ]
+  },
+  "manual_ui_checks": {
+    "launch_capture_off": "passed",
+    "labelled_pattern_local_preview": "passed",
+    "stop_clears_preview": "passed",
+    "missing_extension_error": "passed"
+  },
+  "signing": {
+    "team_id": "M8QBZK948M",
+    "team_source": "public certificate organizational unit",
+    "provisioning": "blocked",
+    "blocker": "Apple Developer Program License Agreement update must be accepted by the account holder",
+    "apple_error": "Unable to process request - PLA Update available",
+    "signed_installation": false,
+    "notarization": "not configured"
+  },
+  "not_yet_verified": [
+    "extension activation and running process",
+    "native sink ownership and callback lifecycle",
+    "extension producer signature checks at runtime",
+    "BRIO formats/capture/effects",
+    "Chrome and Teams web output",
+    "extension upgrade",
+    "external demand integration",
+    "real performance"
+  ],
+  "not_implemented": [
+    "green-screen keyer",
+    "background import",
+    "persistent settings",
+    "release installer"
+  ],
+  "system_changes": {
+    "extension_installed": false,
+    "SIP_changed": false,
+    "camera_services_changed": false,
+    "other_extensions_changed": false
+  },
+  "source_control": {
+    "repository_initialized": false,
+    "commit_created": false,
+    "remote_created": false
+  }
+}

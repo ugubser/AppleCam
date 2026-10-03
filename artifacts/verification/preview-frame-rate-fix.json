@@ -1,0 +1,45 @@
+{
+  "recorded_at": "2026-10-02T10:19:11.861150+00:00",
+  "changes": [
+    "Removed one-in-six-frame preview throttle",
+    "Added bounded newest-frame UI delivery with session invalidation",
+    "Added capture and preview-update fps counters",
+    "Configured exact hardware format and frame duration after session startup"
+  ],
+  "automated_tests": {
+    "passed": 27,
+    "failed": 0
+  },
+  "builds": {
+    "unsigned_debug": "passed",
+    "signed_debug": "passed"
+  },
+  "live_before": {
+    "preview_throttle_maximum_at_30fps": 5,
+    "capture_after_throttle_removal": 24,
+    "hardware_configured_fps": 24.000038
+  },
+  "live_after": {
+    "dimensions": [
+      1920,
+      1080
+    ],
+    "hardware_configured_fps": 30.000030000000002,
+    "frame_duration_value": 1000000,
+    "frame_duration_timescale": 30000030,
+    "observed_rate_samples": [
+      {
+        "capture_fps": 29.0,
+        "preview_update_fps": 29.8
+      },
+      {
+        "capture_fps": 31.0,
+        "preview_update_fps": 30.0
+      }
+    ]
+  },
+  "measurement_boundary": "Capture callbacks and main-thread preview state updates; not display scanout or Teams transmission",
+  "camera_images_recorded": false,
+  "thirty_minute_qualification": "not run",
+  "notarized_archive_contains_fix": false
+}

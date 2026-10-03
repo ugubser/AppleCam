@@ -1,0 +1,24 @@
+{
+  "recorded_at": "2026-10-02T09:37:21.236938+00:00",
+  "issue": "BRIO 1080p nominal-30-fps mode rejected by strict floating-point comparison",
+  "observed_camera": "Logitech BRIO",
+  "observed_mode": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30.00003000003,
+    "frame_duration_value": 1000000,
+    "frame_duration_timescale": 30000030
+  },
+  "change": "Accept at most 100 ns of hardware frame-duration quantization and configure the exact advertised supported duration",
+  "automatic_format_downgrade": false,
+  "tests": {
+    "passed": 20,
+    "failed": 0,
+    "new_regression_tests": 6
+  },
+  "unsigned_build": "passed",
+  "development_signed_build": "passed",
+  "live_camera_startup": "not verified: awaiting camera authorization completion in signed app",
+  "notarized_archive_contains_fix": false,
+  "live_format_selection": "passed: connected BRIO selected at its advertised 1000000/30000030 duration"
+}
