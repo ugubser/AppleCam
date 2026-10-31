@@ -45,6 +45,7 @@ struct MissingSceneSource: Error {
             switch layer.source { case .window, .display: return true; default: return false }
         }
         guard !captures.isEmpty else { return nil }
+        try CaptureSelection.requireAccess()
         if let unconfigured = captures.first(where: { $0.source == .window(nil) || $0.source == .display(nil) }) { return unconfigured }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         return captures.first { layer in
@@ -60,6 +61,7 @@ struct MissingSceneSource: Error {
         }
     }
     private func filter(for layer: SceneLayer) async throws -> SCContentFilter {
+        try CaptureSelection.requireAccess()
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
         switch layer.source {
         case .window(let reference):

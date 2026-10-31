@@ -175,7 +175,7 @@ Clips use AVPlayerItemVideoOutput and a muted AVPlayer, looping by seeking at th
 
 Preferences schema 3 stores exactly four global scenes, selected scene and common output configuration alongside per-camera calibration/capture settings. Versions 1/2 migrate the active camera's slots into four scenes, preserve out-of-slot active images and retain other camera assets as hidden layers. The old preferences document is backed up before the first schema-3 write. Managed asset imports copy files transactionally; live asset removal is deferred until old readers detach. Settings never serialize active publication or captured frames.
 
-macOS 15.2 is now the deployment floor because SCContentFilter.includedWindows/includedDisplays identify system-picker results through public APIs. Browser network access is explicitly entitled.
+macOS 15.2 is the deployment floor (introduced for system-picker identification APIs; build 17 replaced the system picker with an in-app chooser). Browser network access is explicitly entitled.
 
 ## Inspector layout and editing build 16
 
@@ -188,4 +188,12 @@ Editable fields keep a local draft (`DraftBuffer`) and apply it on Return or foc
 Settings writes are coalesced: continuous edits schedule one write after a 400 ms pause, and stop, quit and media import write immediately. `PreferencesStore` checks for a pre-scenes backup once per store instead of re-reading the file on every save. When every visible non-webcam source is already active with the same descriptor and canvas rate, `SceneRuntime` swaps the render plan between frames without screen-content identity checks, first-frame waits or the "Preparing" state; new or changed sources still take the full path.
 
 `FrameProducer` is now only a capture source (webcam or diagnostic pattern into private BGRA buffers). Its build-14 keying, preview and publishing pipeline was unused by the scene runtime and has been removed with its tests; keying, composition and publication are covered through `SceneOutput`.
+
+## Browser, window and screen layers build 17
+
+Window and screen layers use the Screen Recording permission (owner decision). `SCContentSharingPicker` never appeared for the owner on macOS 27, and the runtime's identity checks (`SCShareableContent`) required the permission anyway. `CaptureSelection` now checks `CGPreflightScreenCaptureAccess`, requests access once, and lists shareable windows (ordinary on-screen windows of other processes) and displays. The model presents `CaptureSourceSheet` through an async request completed by the sheet. Missing permission is reported with a specific message and an Open System Settings action, not a ScreenCaptureKit error. Display filters exclude all AppleCam windows, including browser rendering windows. Capture configurations use `contentRect × pointPixelScale`, so Retina sources are captured at pixel size rather than point size.
+
+WebKit `takeSnapshot` intermittently fails with `WKErrorDomain` code 1 at 60 fps (seen after 7–11 successful snapshots, at any canvas size). `SnapshotFailureWindow` treats a failure as transient and retries after one frame; snapshots failing continuously for 2 s still stop the layer with a visible error. A delayed occlusion restart in the page script now re-checks intended playback.
+
+The local preview no longer goes through SwiftUI `Image`. `SceneCompositor.previewBuffer` renders a copy scaled to at most 1920 px into a bounded IOSurface pool on the output queue. `PreviewDisplay` enqueues it as an immediate-display sample into an `AVSampleBufferDisplayLayer`, hosted by `PreviewLayerView`. Thumbnails are rendered (not deferred) at most twice a second. At 3840 × 2160 / 60 fps with browser, screen, window and webcam layers, the main thread went from 6% to 89% idle; SwiftUI image preparation had taken 73% of it. `CameraModel.showingPreview` changes only on start and stop.
 

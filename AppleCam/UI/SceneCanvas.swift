@@ -32,20 +32,25 @@ struct SceneCanvas: View {
     }
 }
 
-/// The only view that reads `model.image`, so each new frame redraws just this image.
+/// The display layer stays in the hierarchy; only the placeholder depends on observed state.
 private struct PreviewImage: View {
     let model: CameraModel
     let size: CGSize
     var body: some View {
-        if let image = model.image {
-            Image(decorative: image, scale: 1).resizable().frame(width: size.width, height: size.height)
-        } else {
-            VStack(spacing: 12) {
-                Image(systemName: "square.3.layers.3d").font(.largeTitle)
-                Text(model.busy ? "Preparing scene…" : "Scene stopped").font(.headline)
-                Text("Click Preview to arrange layers on the live picture.").font(.caption)
-            }.foregroundStyle(.white.opacity(0.7)).frame(width: size.width, height: size.height)
-        }
+        PreviewLayerView(display: model.previewDisplay)
+            .frame(width: size.width, height: size.height)
+            .overlay {
+                if !model.showingPreview {
+                    ZStack {
+                        Color.black
+                        VStack(spacing: 12) {
+                            Image(systemName: "square.3.layers.3d").font(.largeTitle)
+                            Text(model.busy ? "Preparing scene…" : "Scene stopped").font(.headline)
+                            Text("Click Preview to arrange layers on the live picture.").font(.caption)
+                        }.foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+            }
     }
 }
 

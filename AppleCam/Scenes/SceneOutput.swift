@@ -26,7 +26,11 @@ struct SceneCameraFreshness {
 /// All composition and transport operations are serialized. Media sources expose bounded frame snapshots.
 final class SceneOutput: @unchecked Sendable {
     let queue = DispatchQueue(label: "com.vanguardsignals.AppleCam.scene-output", qos: .userInitiated)
-    var onPreview: ((CGImage, CGImage, UUID, UUID) -> Void)?
+    /// Local preview frame (downscaled; the mask in Mask view), an occasional scene thumbnail, scene ID and event ID.
+    var onPreview: ((CVPixelBuffer, CGImage?, UUID, UUID) -> Void)?
+    /// Scene buttons only need a recognisable picture; rendering a thumbnail every frame would waste GPU readback.
+    static let thumbnailInterval = 0.5
+    private var lastThumbnail: Double = -.infinity
     var onStatus: ((String, Bool, UUID) -> Void)?
     var onPublishing: ((Bool, UUID) -> Void)?
     var onRate: ((Double, UUID) -> Void)?
@@ -66,7 +70,7 @@ final class SceneOutput: @unchecked Sendable {
                     if publish { try transport.start(configuration: output) }
                     publishing = publish; self.plan = plan; running = true; missingSince = nil; slowSince = nil
                     startedAt = CMClockGetTime(CMClockGetHostTimeClock()).seconds
-                    rate.reset(at: startedAt); lastRate = startedAt
+                    rate.reset(at: startedAt); lastRate = startedAt; lastThumbnail = -.infinity
                     configureCamera(needed: plan.scene.needsCamera)
                     let timer = DispatchSource.makeTimerSource(queue: queue)
                     timer.schedule(deadline: .now(), repeating: .nanoseconds(Int(1_000_000_000 / output.fps)))
@@ -83,6 +87,7 @@ final class SceneOutput: @unchecked Sendable {
             queue.async { [self] in
                 guard running else { continuation.resume(); return }
                 self.plan = plan; missingSince = nil; freshness = SceneCameraFreshness(); configureCamera(needed: plan.scene.needsCamera)
+                lastThumbnail = -.infinity
                 continuation.resume()
             }
         }
@@ -149,9 +154,15 @@ final class SceneOutput: @unchecked Sendable {
             slowSince = nil
             let sample = try Self.package(output, time: now, duration: compositor.configuration.duration)
             if publishing { try transport.send(sample) }
-            let picture = try compositor.preview(output)
-            let preview = try mask.map { try compositor.preview($0) } ?? picture
-            onPreview?(preview, picture, plan.scene.id, eventID); rate.record()
+            var thumbnail: CGImage?
+            if completed.seconds - lastThumbnail >= Self.thumbnailInterval {
+                thumbnail = try compositor.thumbnail(CIImage(cvPixelBuffer: output)); lastThumbnail = completed.seconds
+            }
+            // A preview frame is skipped (not the published frame) while the display still holds every pooled buffer.
+            if let preview = try compositor.previewBuffer(mask ?? CIImage(cvPixelBuffer: output)) {
+                onPreview?(preview, thumbnail, plan.scene.id, eventID)
+            }
+            rate.record()
             if completed.seconds - lastRate >= 1 { onRate?(rate.sample(at: completed.seconds), eventID); lastRate = completed.seconds }
             if !announced { announced = true; report() }
         } catch { fail(error) }

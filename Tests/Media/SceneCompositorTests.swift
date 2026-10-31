@@ -1,5 +1,6 @@
 import XCTest
 import CoreImage
+import CoreMedia
 import AppleCamCore
 @testable import AppleCamMedia
 
@@ -83,5 +84,30 @@ final class SceneCompositorTests: XCTestCase {
         XCTAssertThrowsError(try gate.accept(timestamp: 1, now: 3.21))
         XCTAssertTrue(try gate.accept(timestamp: 4, now: 4.01))
         XCTAssertThrowsError(try gate.accept(timestamp: 6, now: 5))
+    }
+    func testLocalPreviewIsDownscaledButPublishedFrameKeepsFullResolution() throws {
+        let compositor = try SceneCompositor(configuration: .init(width: 3840, height: 2160, fps: 60))
+        let layer = SceneLayer(name: "Red", source: .camera)
+        let output = try XCTUnwrap(compositor.compose(scene: CameraScene(name: "UHD", layers: [layer]),
+            images: [layer.id: CIImage(color: .red).cropped(to: CGRect(x: 0, y: 0, width: 3840, height: 2160))]))
+        XCTAssertEqual(CVPixelBufferGetWidth(output), 3840); XCTAssertEqual(CVPixelBufferGetHeight(output), 2160)
+        let preview = try XCTUnwrap(compositor.previewBuffer(CIImage(cvPixelBuffer: output)))
+        XCTAssertEqual(CVPixelBufferGetWidth(preview), 1920); XCTAssertEqual(CVPixelBufferGetHeight(preview), 1080)
+        XCTAssertEqual(pixel(preview, x: 960, y: 540), [255, 0, 0, 255], "The downscaled preview keeps the picture")
+        let thumbnail = try compositor.thumbnail(CIImage(cvPixelBuffer: output))
+        XCTAssertEqual(thumbnail.width, 320); XCTAssertEqual(thumbnail.height, 180)
+        let small = try SceneCompositor(configuration: .init(width: 1280, height: 720))
+        let unscaled = try XCTUnwrap(small.previewBuffer(CIImage(color: .blue).cropped(to: CGRect(x: 0, y: 0, width: 1280, height: 720))))
+        XCTAssertEqual(CVPixelBufferGetWidth(unscaled), 1280)
+    }
+    func testPreviewFramesAreBoundedWhileTheDisplayHoldsThem() throws {
+        let compositor = try SceneCompositor(configuration: .init(width: 64, height: 32))
+        let image = CIImage(color: .green).cropped(to: CGRect(x: 0, y: 0, width: 64, height: 32))
+        var held: [CVPixelBuffer] = []
+        for _ in 0..<12 { if let buffer = try compositor.previewBuffer(image) { held.append(buffer) } }
+        XCTAssertLessThan(held.count, 12, "Preview frames are skipped instead of allocating without limit")
+        XCTAssertFalse(held.isEmpty)
+        let sample = try PreviewDisplay.sample(held[0])
+        XCTAssertTrue(sample.isValid); XCTAssertTrue(sample.imageBuffer === held[0])
     }
 }

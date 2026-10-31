@@ -23,6 +23,9 @@ struct ContentView: View {
         .navigationTitle("AppleCam")
         .navigationSubtitle("\(model.activeScene.name) · \(model.outputConfiguration.label)")
         .toolbar { OutputToolbar(model: model, inspectorShown: $inspectorShown) }
+        .sheet(item: Binding(get: { model.captureRequest }, set: { if $0 == nil { model.finishCaptureChoice(nil) } })) { request in
+            CaptureSourceSheet(model: model, request: request)
+        }
         // No extra window-level minimum frame: the split view derives the window minimum from its columns, and a
         // competing frame makes AppKit loop on constraint updates when the window reaches its minimum size.
     }

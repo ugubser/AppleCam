@@ -64,11 +64,48 @@ final class SceneCompositor {
         CVBufferSetAttachment(output, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
         return output
     }
-    func preview(_ buffer: CVPixelBuffer) throws -> CGImage {
-        try preview(CIImage(cvPixelBuffer: buffer))
+    /// Local preview frames are scaled on the GPU to at most this many pixels on the longer side; the interface never
+    /// shows the canvas larger. Published frames are unaffected.
+    static let previewMaxDimension: CGFloat = 1920
+    private var previewPool: CVPixelBufferPool?
+    private var previewSize = CGSize.zero
+    /// Renders a downscaled copy into a reusable IOSurface buffer for `AVSampleBufferDisplayLayer`, so the main thread
+    /// never creates or copies a full image per frame. Returns nil when the display still holds every pooled buffer.
+    func previewBuffer(_ image: CIImage) throws -> CVPixelBuffer? {
+        let scaled = Self.scaled(image, maxDimension: Self.previewMaxDimension)
+        let extent = scaled.extent.integral
+        if previewPool == nil || previewSize != extent.size {
+            let attributes: [CFString: Any] = [kCVPixelBufferWidthKey: Int(extent.width), kCVPixelBufferHeightKey: Int(extent.height),
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA, kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true]
+            var pool: CVPixelBufferPool?
+            let status = CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &pool)
+            guard status == kCVReturnSuccess else { throw CameraError.operation("Create preview frame pool", status) }
+            previewPool = pool; previewSize = extent.size
+        }
+        guard let previewPool else { throw CameraError.message("Preview frame pool is unavailable.") }
+        var buffer: CVPixelBuffer?
+        let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, previewPool,
+            [kCVPixelBufferPoolAllocationThresholdKey: 6] as CFDictionary, &buffer)
+        if status == kCVReturnWouldExceedAllocationThreshold { return nil }
+        guard status == kCVReturnSuccess, let buffer else { throw CameraError.operation("Allocate preview frame", status) }
+        context.render(scaled, to: buffer, bounds: extent, colorSpace: space)
+        CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
+        CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
+        CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, .shouldPropagate)
+        return buffer
     }
-    func preview(_ image: CIImage) throws -> CGImage {
-        guard let image = context.createCGImage(image, from: image.extent) else { throw CameraError.message("Cannot draw the scene preview.") }
-        return image
+    /// A small, fully rendered still for the scene buttons.
+    func thumbnail(_ image: CIImage, maxDimension: CGFloat = 320) throws -> CGImage {
+        let scaled = Self.scaled(image, maxDimension: maxDimension)
+        guard let picture = context.createCGImage(scaled, from: scaled.extent.integral, format: .RGBA8, colorSpace: space, deferred: false) else {
+            throw CameraError.message("Cannot draw the scene thumbnail.")
+        }
+        return picture
+    }
+    private static func scaled(_ image: CIImage, maxDimension: CGFloat) -> CIImage {
+        let origin = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+        let longest = max(origin.extent.width, origin.extent.height)
+        guard longest > maxDimension else { return origin }
+        return origin.transformed(by: CGAffineTransform(scaleX: maxDimension / longest, y: maxDimension / longest))
     }
 }

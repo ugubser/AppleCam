@@ -130,8 +130,9 @@ final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCSt
     init(filter: SCContentFilter, fps: Double, cursor: Bool = true) {
         self.filter = filter
         configuration = SCStreamConfiguration()
-        let size = filter.contentRect.size
-        configuration.width = max(2, Int(size.width)); configuration.height = max(2, Int(size.height))
+        // contentRect is in points; capture in pixels so Retina windows and screens stay sharp.
+        let size = filter.contentRect.size, scale = CGFloat(filter.pointPixelScale)
+        configuration.width = max(2, Int((size.width * scale).rounded())); configuration.height = max(2, Int((size.height * scale).rounded()))
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
         configuration.colorSpaceName = CGColorSpace.sRGB
         configuration.minimumFrameInterval = CMTime(seconds: 1 / fps, preferredTimescale: 1_000_000_000)

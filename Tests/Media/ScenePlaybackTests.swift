@@ -110,7 +110,7 @@ final class ScenePlaybackTests: XCTestCase {
         var delivered = false
         output.onPreview = { image, _, _, _ in
             lock.lock(); defer { lock.unlock() }
-            if !delivered { delivered = true; XCTAssertEqual(image.width, 128); XCTAssertEqual(image.height, 64); preview.fulfill() }
+            if !delivered { delivered = true; XCTAssertEqual(CVPixelBufferGetWidth(image), 128); XCTAssertEqual(CVPixelBufferGetHeight(image), 64); preview.fulfill() }
         }
         let plan = SceneRenderPlan(scene: CameraScene(name: "Camera", layers: [SceneLayer(name: "Me", source: .camera)]),
             sources: [:], key: KeySettings(), greenScreen: true, maskPreview: false)

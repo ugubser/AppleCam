@@ -8,9 +8,9 @@ Built with Swift, SwiftUI, AVFoundation, Core Image, Metal and Apple's Core Medi
 
 ## Current status
 
-Version **0.3.0, build 16** rearranges the window so the live output is always visible while editing, and fixes editing, flicker and stability bugs found in build 15. The source, unsigned verification build and locally development-signed build are updated; build 16 has not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
+Version **0.4.0, build 17** makes browser, window and screen layers work: window and screen layers use the Screen Recording permission and an in-app chooser, browser layers survive occasional WebKit snapshot failures at 60 fps, and the local preview is shown through a GPU display layer so 3840 × 2160 at 60 fps stays responsive. Build 16 (0.3.0) rearranged the window into sidebar, canvas and inspector. The source, unsigned verification build and locally development-signed build are updated; build 17 has not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
 
-The build-16 validation run passed **123 automated tests**; build 15's scene validation passed 115. A separate native AppKit integration check captured generated video through public WebKit snapshots, including an obscured rendering window, and verified silence, pause and resume. Local synthetic scene output was observed at about 30 fps in the app. These checks do not qualify live YouTube, screen permission UX, arbitrary cameras, or sustained Teams calls. Historical capture measurements and their limits remain in [the validation plan](docs/VALIDATION_PLAN.md).
+The build-17 validation run passed **130 automated tests** (build 16: 123; build 15: 115). A separate native AppKit integration check captured generated video through public WebKit snapshots, including an obscured rendering window, and verified silence, pause and resume. Local synthetic scene output was observed at about 30 fps in the app. These checks do not qualify live YouTube, screen permission UX, arbitrary cameras, or sustained Teams calls. Historical capture measurements and their limits remain in [the validation plan](docs/VALIDATION_PLAN.md).
 
 ## Release tags
 
@@ -18,7 +18,7 @@ Releases use annotated Git tags named `vMAJOR.MINOR` (for example, `v0.2`); patc
 
 - `v0.1`: build 14, the previous release with per-camera profiles, background shortcuts and approved branding.
 - `v0.2`: build 15, shared scenes and editable media layers. Runtime acceptance limits are recorded above and in the validation plan; a source tag does not imply a notarized distribution.
-- Version 0.3.0 (build 16) is committed but not yet tagged.
+- Versions 0.3.0 (build 16) and 0.4.0 (build 17) are committed but not yet tagged.
 
 ## Window layout
 
@@ -41,7 +41,7 @@ Text and number fields apply on Return or when you leave the field, and Escape r
 - PNG/JPEG layers, including transparency, and private managed copies of imported images and clips.
 - Silent, repeating macOS-decodable video clips. Inactive/hidden clips pause and resume in place when shown again; Play/Pause and Restart are explicit controls. Position is retained during this app session, not across quitting.
 - WebKit browser layers with URL, viewport size, interaction and reload controls. Each active browser uses its own borderless rendering window and public WebKit snapshots, with one capture request at a time. Ordinary window occlusion is supported; the surface must remain ordered rather than minimized or closed. Inactive browser media and capture are suspended.
-- Window/display layers selected through the system picker. Missing windows offer **Choose window…** or **Not right now**, which explicitly hides that layer while preserving its settings. No window is guessed from its title.
+- Window/display layers chosen in AppleCam's own chooser (thumbnails, app icons) using the macOS Screen Recording permission. Selections are remembered across launches and re-identified strictly (window ID, process and launch time; display UUID). Missing windows offer **Choose window…** or **Not right now**, which explicitly hides that layer while preserving its settings. No window is guessed from its title.
 - Automatic versioned settings persistence, camera calibration, shared scenes and selected scene. Legacy v1/v2 background slots migrate into scenes, with a backup of the old settings. Other camera backgrounds are preserved as hidden layers.
 - Restored settings never automatically start capture or sending. Visible source failures stop output; there is no substitute camera, source or automatic format reduction.
 
@@ -50,10 +50,10 @@ AppleCam provides video only. Keep your usual microphone selected in your meetin
 ## Requirements
 
 - Xcode with the macOS SDK and command-line tools selected. Development has been validated with Xcode 27 on macOS 27 and an Apple M1 Ultra Mac Studio.
-- The project deployment target is macOS 15.2 (the picker identification APIs require it); older supported versions and other hardware have not been fully qualified.
+- The project deployment target is macOS 15.2; older supported versions and other hardware have not been fully qualified.
 - A built-in, external or Continuity camera exposed through AVFoundation. AppleCam discovers its resolutions and frame-rate ranges; the primary tested physical camera remains Logitech BRIO.
 - A physical green screen for chroma keying; ordinary camera and non-camera scenes can also run without keying.
-- macOS Screen Recording permission for window/display capture; network access for browser pages.
+- macOS Screen Recording permission for window/display layers (System Settings → Privacy & Security → Screen & System Audio Recording; AppleCam asks the first time you add one, then needs to be reopened). Each differently signed copy, such as a development build and the notarized app, needs its own permission. Network access for browser pages.
 - Appropriate Apple Developer signing/provisioning for the camera extension and Developer ID distribution.
 
 ## Build and test
@@ -104,7 +104,7 @@ The project contains public bundle and team identifiers, but no signing credenti
 6. For browser pages, set the address (press Return to load) and viewport and use **Interact with Page** for playback/navigation. The source rendering window stays ordered while active; do not minimize it. Page playback/embedding restrictions and protected video remain website/OS constraints. AppleCam does not download YouTube streams or bypass player restrictions. Browser sessions are ephemeral and are not shared with Safari/Chrome. Web Audio is disabled in silent browser layers.
 7. Click **Send to AppleCam**, select **AppleCam** in the meeting camera picker, and confirm its preview before joining a call. Keep the usual microphone selected; no media audio is sent.
 
-Edits affect the selected scene live. Switching scene buttons selects a complete composition without restarting the virtual-camera transport. Hidden/inactive sources are paused/stopped and retained for returning to the scene. If a window has closed or its application restarted, choose it again or use **Not right now** to hide just that layer and continue. Cancelling the picker leaves output stopped; no replacement is selected. A visible source failure stops publication; receiving clients can retain their last picture.
+Edits affect the selected scene live. Switching scene buttons selects a complete composition without restarting the virtual-camera transport. Hidden/inactive sources are paused/stopped and retained for returning to the scene. If a window has closed or its application restarted, choose it again or use **Not right now** to hide just that layer and continue. Cancelling the chooser leaves output stopped; no replacement is selected. A visible source failure stops publication; receiving clients can retain their last picture.
 
 **Preview** ends publication while keeping local composition running; **Stop** ends capture and publication. Camera and canvas format changes require Stop. Shared scenes persist across webcam changes; each camera retains its own key calibration, green-screen preference and capture format. A scene with no visible webcam does not request camera access. No camera, window or display frames are recorded by AppleCam.
 

@@ -7,13 +7,15 @@ import Observation
 import UniformTypeIdentifiers
 import ScreenCaptureKit
 
-/// Observation tracks each property separately, so a new preview frame only redraws views that read `image`.
+/// Observation tracks each property separately. Preview frames go straight to `previewDisplay` and are not observed.
 @MainActor @Observable final class CameraModel {
     var status = "Configure your four scenes, then start a local preview or send to AppleCam."
     var running = false
     var busy = false
     var publishing = false
-    var image: CGImage?
+    /// True while preview frames are being shown; changes only on start and stop, never per frame.
+    var showingPreview = false
+    @ObservationIgnored let previewDisplay = PreviewDisplay()
     var captureFPS: Double = 0
     var previewFPS: Double = 0
     var selection = "pattern" { didSet { switchProfile(from: oldValue) } }
@@ -46,7 +48,9 @@ import ScreenCaptureKit
     @ObservationIgnored private let preferencesStore: PreferencesStore
     @ObservationIgnored private var preferences = SavedPreferences()
     @ObservationIgnored private let runtime: SceneRuntime
-    @ObservationIgnored private let picker = CaptureSelection()
+    /// An open in-app window/screen chooser. The sheet completes it with `finishCaptureChoice`.
+    var captureRequest: CaptureRequest?
+    @ObservationIgnored private var captureContinuation: CheckedContinuation<CaptureOption?, Never>?
     @ObservationIgnored private var restoring = true
     @ObservationIgnored private var savedCameraName = "Saved camera"
     @ObservationIgnored private var appendSample = false
@@ -57,18 +61,16 @@ import ScreenCaptureKit
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var requestedPublish = false
     private struct PreviewFrame {
-        let image: CGImage
-        let picture: CGImage
+        let buffer: CVPixelBuffer
+        let thumbnail: CGImage?
         let scene: UUID
         let event: UUID
     }
     @ObservationIgnored private let previewMailbox = LatestFrameMailbox<PreviewFrame>()
     @ObservationIgnored private var previewRate = FrameRateCounter()
     @ObservationIgnored private var rateTimer: Timer?
-    @ObservationIgnored private var thumbnailTimes: [UUID: Double] = [:]
     /// Continuous edits (dragging, sliders, typing) are coalesced into one write after this pause.
     static let saveDelay: UInt64 = 400_000_000
-    static let thumbnailInterval = 0.5
     var activeScene: CameraScene { scenes[selectedScene] }
     var selectedLayer: SceneLayer? { activeScene.layers.first { $0.id == selectedLayerID } }
     var isMaskPreview: Bool { previewMode == .mask && useGreenScreen && activeScene.needsCamera }
@@ -100,7 +102,7 @@ import ScreenCaptureKit
                 guard let self, event == self.runtime.eventID else { return }
                 self.status = text; self.running = active; self.busy = false
                 if !active {
-                    self.image = nil; self.sampling = false; self.samplePending = false
+                    self.clearPreview(); self.sampling = false; self.samplePending = false
                     self.previewMailbox.invalidate(); self.stopRateTimer()
                     self.requestID += 1; self.runtime.invalidateEvents()
                     let request = self.requestID, previous = self.sceneTask
@@ -114,13 +116,16 @@ import ScreenCaptureKit
             }
         }
         let mailbox = previewMailbox
-        runtime.output.onPreview = { [weak self] image, picture, sceneID, event in
-            guard let ticket = mailbox.offer(PreviewFrame(image: image, picture: picture, scene: sceneID, event: event)) else { return }
+        runtime.output.onPreview = { [weak self] buffer, thumbnail, sceneID, event in
+            // The mailbox keeps only the newest frame; a skipped frame's thumbnail is simply refreshed next interval.
+            guard let ticket = mailbox.offer(PreviewFrame(buffer: buffer, thumbnail: thumbnail, scene: sceneID, event: event)) else { return }
             Task { @MainActor in
                 guard let self, let newest = mailbox.take(ticket: ticket), newest.event == self.runtime.eventID, self.running || self.busy else { return }
-                self.updateThumbnail(newest.picture, scene: newest.scene)
+                if let thumbnail = newest.thumbnail { self.sceneThumbnails[newest.scene] = thumbnail }
                 guard newest.scene == self.activeScene.id else { return }
-                self.image = newest.image; self.previewRate.record()
+                do { try self.previewDisplay.show(newest.buffer) } catch { self.status = error.localizedDescription; return }
+                if !self.showingPreview { self.showingPreview = true }
+                self.previewRate.record()
             }
         }
         runtime.output.onRate = { [weak self] rate, event in
@@ -141,12 +146,7 @@ import ScreenCaptureKit
         selectedLayerID = activeScene.layers.first?.id
     }
     deinit { NotificationCenter.default.removeObserver(self) }
-    /// Thumbnails only need to show which scene is which; refreshing them every frame would redraw the scene list at video rate.
-    private func updateThumbnail(_ picture: CGImage, scene: UUID) {
-        let now = ProcessInfo.processInfo.systemUptime
-        guard sceneThumbnails[scene] == nil || now - (thumbnailTimes[scene] ?? 0) >= Self.thumbnailInterval else { return }
-        thumbnailTimes[scene] = now; sceneThumbnails[scene] = picture
-    }
+    private func clearPreview() { showingPreview = false; previewDisplay.clear() }
     private func currentProfile(cameraID: String) -> CameraProfile {
         var profile = CameraProfile()
         profile.cameraName = cameraID == "pattern" ? "Labelled test pattern (no webcam)" :
@@ -291,10 +291,10 @@ import ScreenCaptureKit
         let sceneID = activeScene.id
         Task {
             do {
-                guard let (source, filter) = try await picker.choose(display: display) else { return }
-                let layer = SceneLayer(name: source.label, source: source)
+                guard let choice = try await chooseCaptureSource(display: display) else { return }
+                let layer = SceneLayer(name: choice.title, source: choice.source)
                 guard let scene = scenes.firstIndex(where: { $0.id == sceneID }) else { return }
-                runtime.pickedFilters[layer.id] = filter
+                runtime.pickedFilters[layer.id] = choice.filter
                 scenes[scene].layers.insert(layer, at: 0); if scene == selectedScene { selectedLayerID = layer.id }
             } catch { status = error.localizedDescription }
         }
@@ -304,8 +304,8 @@ import ScreenCaptureKit
         let display: Bool; if case .display = layer.source { display = true } else { display = false }
         Task {
             do {
-                guard let (source, filter) = try await picker.choose(display: display) else { return }
-                setCaptureSource(id, source: source, filter: filter)
+                guard let choice = try await chooseCaptureSource(display: display) else { return }
+                setCaptureSource(id, source: choice.source, filter: choice.filter)
             } catch { status = error.localizedDescription }
         }
     }
@@ -415,7 +415,7 @@ import ScreenCaptureKit
                 catch is ScenePreparationSuperseded { continue }
                 catch {
                     if applied != revision { continue }
-                    await runtime.stop(); preferencesStore.cleanupUnusedMedia(); running = false; busy = false; image = nil; stopRateTimer()
+                    await runtime.stop(); preferencesStore.cleanupUnusedMedia(); running = false; busy = false; clearPreview(); stopRateTimer()
                     if let missing = error as? MissingSceneSource {
                         if await resolveMissing(missing.layer) { revision += 1; continue }
                     }
@@ -434,9 +434,31 @@ import ScreenCaptureKit
             return hideUnavailableLayer(layer.id)
         }
         do {
-            guard let (source, filter) = try await picker.choose(display: display) else { return false }
-            setCaptureSource(layer.id, source: source, filter: filter); return true
+            guard let choice = try await chooseCaptureSource(display: display) else { return false }
+            setCaptureSource(layer.id, source: choice.source, filter: choice.filter); return true
         } catch { status = error.localizedDescription; return false }
+    }
+    /// Asks for Screen Recording permission when needed, then opens the in-app chooser and waits for its result.
+    /// Returns nil when the person cancels or permission is not granted yet.
+    func chooseCaptureSource(display: Bool) async throws -> CaptureOption? {
+        guard captureContinuation == nil else { throw CameraError.message("Finish the open source chooser first.") }
+        guard CaptureSelection.hasAccess || CaptureSelection.requestAccess() else {
+            status = CaptureSelection.permissionMessage
+            let alert = NSAlert(); alert.messageText = "Allow Screen Recording for AppleCam"
+            alert.informativeText = "Window and screen layers need Screen Recording permission. Turn on AppleCam in Screen & System Audio Recording, then quit and reopen AppleCam. AppleCam only captures the windows and screens you add as layers."
+            alert.addButton(withTitle: "Open System Settings"); alert.addButton(withTitle: "Not Now")
+            if alert.runModal() == .alertFirstButtonReturn { NSWorkspace.shared.open(CaptureSelection.settingsURL) }
+            return nil
+        }
+        return await withCheckedContinuation { continuation in
+            captureContinuation = continuation; captureRequest = CaptureRequest(display: display)
+        }
+    }
+    /// Completes the open chooser. Safe to call more than once (selection, then sheet dismissal).
+    func finishCaptureChoice(_ choice: CaptureOption?) {
+        captureRequest = nil
+        let continuation = captureContinuation; captureContinuation = nil
+        continuation?.resume(returning: choice)
     }
     private func setCaptureSource(_ id: UUID, source: LayerSource, filter: ScreenCaptureKit.SCContentFilter) {
         guard let scene = scenes.firstIndex(where: { $0.layers.contains { $0.id == id } }),
@@ -473,7 +495,7 @@ import ScreenCaptureKit
     private func stopRateTimer() { rateTimer?.invalidate(); rateTimer = nil; captureFPS = 0; previewFPS = 0 }
     func stop() {
         flushPreferences(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
-        running = false; busy = true; scenePreparing = false; previewMailbox.invalidate(); image = nil; stopRateTimer()
+        running = false; busy = true; scenePreparing = false; previewMailbox.invalidate(); clearPreview(); stopRateTimer()
         let request = requestID
         Task {
             await stopRuntime(after: previous)

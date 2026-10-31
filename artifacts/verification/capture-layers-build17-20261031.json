@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-31",
+  "build": 17,
+  "version": "0.4.0",
+  "platform": { "macOS": "27.0.1", "architecture": "arm64", "xcode": "27.2 (27B52)" },
+  "scope": "Screen Recording based window/screen chooser, transient WebKit snapshot tolerance, AVSampleBufferDisplayLayer preview, Retina capture size",
+  "automated_tests": { "passed": 130, "failed": 0, "core": 66, "media": 64, "log": "work/tests.log" },
+  "unsigned_verification": { "passed": true, "log": "work/verify16.log" },
+  "development_signing": {
+    "passed": true,
+    "artifact": "build/ScenesSigned/Build/Products/Debug/AppleCam.app",
+    "checks": ["codesign --verify --deep --strict", "producer signing requirement", "wrong identifier/team/unrelated program rejected"],
+    "log": "work/scenes-signed-build.log",
+    "notarized": false
+  },
+  "preview_display_integration": {
+    "passed": true,
+    "script": "scripts/verify-preview-display.sh",
+    "result": "181 frames of 1920x1080 from a 3840x2160@60 canvas in 3 s; renderer rendering; no errors"
+  },
+  "native_browser_integration": { "passed": true, "runs": "3 of 3", "note": "build-16 intermittent user-pause issue not observed in these runs; not claimed fixed" },
+  "app_checks": {
+    "isolated_preferences": true,
+    "screen_recording_permission": "granted by owner to the development build",
+    "passed": [
+      "browser layer 60 fps at 1920x1080 and 3840x2160 (previously failed with WKErrorDomain 1)",
+      "in-app chooser lists windows and displays",
+      "window and display layers preview with webcam pattern",
+      "saved window/display layers re-identified after relaunch",
+      "closed window stops output with a specific message",
+      "45 s at 3840x2160@60 with browser, display, window and webcam layers"
+    ],
+    "main_thread_idle": { "before": "6%", "after": "89%" },
+    "cpu_percent": { "before": 138, "after": 89 }
+  },
+  "unverified": [
+    "Owner visual check of the AVSampleBufferDisplayLayer preview and of the chooser sheet",
+    "Missing-window prompt leading into the chooser",
+    "Display unplug",
+    "Send to AppleCam at 4K60"
+  ],
+  "installed_app_modified": false,
+  "camera_extension_activated": false,
+  "committed": true,
+  "pushed": false
+}

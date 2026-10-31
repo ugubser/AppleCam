@@ -101,7 +101,7 @@ final class CameraPreferencesTests: XCTestCase {
         model.start(publish: false); model.stop(); model.stop()
         for _ in 0..<100 { if !model.busy { break }; try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertFalse(model.running); XCTAssertFalse(model.busy); XCTAssertFalse(model.scenePreparing); XCTAssertFalse(model.publishing)
-        XCTAssertNil(model.image)
+        XCTAssertFalse(model.showingPreview)
     }
     @MainActor func testContinuousEditsAreCoalescedIntoOneDeferredWrite() async throws {
         let store = try store(), model = CameraModel(preferencesStore: store)

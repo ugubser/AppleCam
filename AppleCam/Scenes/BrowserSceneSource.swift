@@ -121,6 +121,7 @@ import WebKit
         let ticket = generation
         snapshotTask = Task { [weak self] in
             guard let self else { return }
+            var failures = SnapshotFailureWindow()
             while self.active && self.generation == ticket && !Task.isCancelled {
                 let began = CMClockGetTime(CMClockGetHostTimeClock())
                 do {
@@ -130,11 +131,17 @@ import WebKit
                     let result = try await self.webView.takeSnapshot(configuration: configuration)
                     guard self.active, self.generation == ticket, !Task.isCancelled else { return }
                     guard let image = result.cgImage(forProposedRect: nil, context: nil, hints: nil) else { throw CameraError.message("WebKit supplied no page image.") }
-                    self.pixels.set(image, at: began.seconds)
+                    self.pixels.set(image, at: began.seconds); failures.succeeded()
                     let remaining = max(0, 1 / self.fps - (CMClockGetTime(CMClockGetHostTimeClock()).seconds - began.seconds))
                     if remaining > 0 { try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000)) }
                 } catch is CancellationError { return }
-                catch { if self.active && self.generation == ticket { self.errors.set(error) }; return }
+                catch {
+                    guard self.active, self.generation == ticket else { return }
+                    // Individual snapshots can fail transiently (WKError.unknown, seen at 60 fps) while the page keeps
+                    // rendering. Retry after one frame; only persistent failure stops the layer with a visible error.
+                    if failures.failed(at: CMClockGetTime(CMClockGetHostTimeClock()).seconds) { self.errors.set(error); return }
+                    do { try await Task.sleep(nanoseconds: UInt64(1_000_000_000 / self.fps)) } catch { return }
+                }
             }
         }
     }
@@ -171,6 +178,19 @@ import WebKit
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
         if let url = navigationAction.request.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") { webView.load(URLRequest(url: url)) }
         return nil
+    }
+}
+
+/// WebKit can fail a single snapshot while the page keeps rendering. A failure becomes fatal only when snapshots
+/// keep failing for `limit` seconds without a success, matching the other sources' two-second persistence rule.
+struct SnapshotFailureWindow {
+    static let limit: Double = 2
+    private var failingSince: Double?
+    mutating func succeeded() { failingSince = nil }
+    /// Returns true when the failure should stop the layer.
+    mutating func failed(at now: Double) -> Bool {
+        guard let start = failingSince else { failingSince = now; return false }
+        return now - start >= Self.limit
     }
 }
 
