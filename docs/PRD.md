@@ -173,3 +173,13 @@ This revision expands the initial BRIO/1080p30 scope and supersedes the effects-
 - Remove the Open Apple Video Effects button. No new Apple-effects restrictions.
 
 Acceptance includes switching two camera profiles, quitting/reopening, restoring calibration and all four buttons, selecting different supported formats, and inspecting output in a separate meeting client. Automated tests cover persisted models, frame dimensions/timing and GPU conversion; OS activation, live hardware rates and browser negotiation require integration checks.
+
+## Scene and media expansion confirmed 30 October 2026
+
+The owner approved implementation of four shared scene buttons with independent ordered layer stacks. A button selects the complete scene for local preview and enabled virtual-camera output. Webcam, PNG/JPEG (including alpha), silent macOS-decodable repeating clip, WebKit page, selected window and selected display are supported source types. Each layer has its own name, visibility, placement lock, front-to-back order, normalized position/size, aspect lock and Fit/Fill. Edits apply live, scene changes are cuts, and inactive clips pause and resume in place during the current app session. The common canvas output format persists independently of per-camera capture formats and calibration.
+
+Missing-window recovery must offer Choose window and Not right now. Not right now explicitly hides only that layer, retaining its source and geometry; a cancelled picker does not choose a substitute or start publication. Window identity includes process launch time, process ID, bundle ID and window ID, not title matching. Active source loss stops output and offers this recovery when the selected window is missing.
+
+This expansion supersedes the original still-only/animated-background exclusion. Audio remains excluded: clip players are muted, browser HTML media is forced silent and Web Audio is disabled. Browser websites access the network in an ephemeral WebKit session, with page camera/microphone requests denied. Public WebKit snapshots capture a dedicated ordered rendering window; window/display sources use ScreenCaptureKit. Ordinary occlusion is tested, minimizing/closing that surface is unsupported. General live YouTube compatibility and provider playback restrictions require runtime qualification; no stream extraction or protected-media bypass is implemented.
+
+The updated source/build is implementation evidence, not acceptance of a sustained meeting, signed installation, every camera or every codec.

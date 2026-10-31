@@ -12,6 +12,9 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     var onStatus: ((String, Bool) -> Void)?
     var onPreview: ((CGImage) -> Void)?
     var onCaptureRate: ((Double, Int) -> Void)?
+    var onFailure: ((Error) -> Void)?
+    var onCameraFrame: ((CVPixelBuffer, CMTime) -> Void)?
+    private var captureOnly = false
     var onSample: ((Result<SIMD3<Float>, Error>) -> Void)?
     var onState: ((_ publishing: Bool, _ cameraReady: Bool) -> Void)?
     private var cameraReady = false
@@ -47,13 +50,13 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified)
             .devices.filter { $0.uniqueID != CameraContract.deviceID.uuidString && $0.localizedName != CameraContract.name }
     }
-    func start(mode: Mode, publish: Bool, background: CGImage? = nil, settings: KeySettings = KeySettings(), configuration: CaptureConfiguration = CaptureConfiguration()) {
+    func start(mode: Mode, publish: Bool, background: CGImage? = nil, settings: KeySettings = KeySettings(), configuration: CaptureConfiguration = CaptureConfiguration(), captureOnly: Bool = false) {
         queue.async { [self] in
             stopOnQueue()
             do {
                 guard configuration.isValid else { throw CameraError.message("Invalid camera format.") }
                 self.configuration = configuration; frameDuration = configuration.duration
-                self.publish = publish
+                self.publish = publish; self.captureOnly = captureOnly
                 if let background {
                     guard settings.isValid else { throw CameraError.message("Invalid green-screen settings.") }
                     keyer = try GreenScreenProcessor(background: background, width: configuration.width, height: configuration.height)
@@ -139,7 +142,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         transport.stop(); pool = nil; videoDescription = nil; pattern = nil
         latestRaw = nil; keyer = nil
     }
-    private func fail(_ error: Error) { stopOnQueue(); onStatus?(error.localizedDescription, false) }
+    private func fail(_ error: Error) { stopOnQueue(); onFailure?(error); onStatus?(error.localizedDescription, false) }
     private func makePool() throws {
         let attributes: [CFString: Any] = [kCVPixelBufferWidthKey: configuration.width,
             kCVPixelBufferHeightKey: configuration.height, kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
@@ -259,6 +262,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let space = CGColorSpace(name: CGColorSpace.sRGB)!
             context.render(image, to: raw, bounds: CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height), colorSpace: space)
             latestRaw = raw
+            if captureOnly { onCameraFrame?(raw, time); frame += 1; return }
             var delivered = raw
             var localMask: CVPixelBuffer?
             if let keyer {

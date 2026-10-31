@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-30",
+  "build": 15,
+  "platform": {
+    "macOS": "27.0.1",
+    "architecture": "arm64"
+  },
+  "scope": "Four shared scenes with editable webcam, image, clip, WebKit, window and display layers",
+  "automated_tests": {
+    "passed": 115,
+    "failed": 0,
+    "core": 66,
+    "media": 49,
+    "log": "work/tests.log"
+  },
+  "unsigned_verification": {
+    "passed": true,
+    "checks": [
+      "Debug app and embedded camera extension",
+      "embedded bundle layout",
+      "standard and Retina app icon"
+    ],
+    "log": "work/scenes-final-verification.log"
+  },
+  "development_signing": {
+    "passed": true,
+    "artifact": "build/ScenesSigned/Build/Products/Debug/AppleCam.app",
+    "checks": [
+      "codesign --verify --deep --strict",
+      "expected producer signing requirement",
+      "wrong identifier rejected",
+      "wrong team rejected",
+      "unrelated signed program rejected"
+    ],
+    "log": "work/scenes-signed-build.log",
+    "notarized": false
+  },
+  "native_browser_integration": {
+    "passed": true,
+    "frames_sampled": 144,
+    "capture_path": "Public WKWebView.takeSnapshot, one request at a time",
+    "source": "Generated local red/blue movie in a dedicated WebKit window",
+    "checks": [
+      "changing video pixels",
+      "obscured rendering window",
+      "silent media",
+      "inactive pause",
+      "active resume",
+      "explicit user pause preserved"
+    ],
+    "log": "work/browser-layer-native-integration.log"
+  },
+  "ui_smoke": {
+    "passed": true,
+    "source": "Labelled synthetic pattern only",
+    "isolated_preferences": true,
+    "checks": [
+      "local scene preview",
+      "scene switching",
+      "live aspect-locked resizing",
+      "placement locking",
+      "Stop"
+    ],
+    "observed_output": "approximately 30 fps at 1920x1080; synthetic, not a camera benchmark"
+  },
+  "unverified": [
+    "Signed-app Screen Recording/system picker flows and revocation",
+    "Window close/reopen and display unplug under real usage",
+    "Live YouTube/provider restrictions",
+    "Real camera sampling after transforms",
+    "30-minute representative mixed-source call",
+    "Teams pre-join and independent remote receiver"
+  ],
+  "installed_app_modified": false,
+  "camera_extension_activated": false,
+  "committed": false,
+  "pushed": false
+}

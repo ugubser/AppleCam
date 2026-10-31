@@ -116,3 +116,11 @@ Requirements addressed: AC-OPS-01, AC-OPS-02, AC-OPS-03, AC-PRV-01, AC-PRV-02, A
 Add tests alongside each module rather than deferring them to the end. The settings schema, state reducer, queue behavior and reference keyer are suitable for deterministic unit tests. GPU output requires a Metal-capable host and a comparison against reference results. OS activation, TCC prompts and browser delivery require integration checks; the reasons are documented in the [Validation plan](VALIDATION_PLAN.md).
 
 The owner subsequently requested implementation. M0 now has native app and extension targets, a development transport, diagnostic capture and synthetic tests. Development signing is now verified. Complete notarization, then actual extension, BRIO and browser validation. No OS service changes or permission exceptions are required by this implementation.
+
+## Scene expansion build 15 dated 30 October 2026
+
+Owner-confirmed scope: four shared scenes; ordered editable webcam/image/clip/browser/window/screen layers; live edits; resume inactive clips; silent media; native macOS decoding first; camera-specific calibration; Not right now hides the missing source layer and continues.
+
+Implementation is present in Shared/Scene.swift and AppleCam/Scenes, integrated with CameraModel and the SwiftUI controls. Schema migration, managed asset ownership, output timing and source lifecycle have automated coverage. Build 15 compiles the host and embedded extension. The native generated-video browser harness validates actual WebKit snapshot pixels, silence, occlusion and pause/resume. This does not mark a product acceptance milestone complete.
+
+Remaining runtime acceptance: system-picker interaction and permission denial/revocation under the signed app; closed/reopened windows and display removal; representative YouTube pages under actual network/player restrictions; real camera key sampling after drag/resize; mixed-source sustained call performance and independent Teams receiver quality. A separate local development-signed build passed strict signature and producer-signing requirement checks. No notarization, installation, commit or push occurred.

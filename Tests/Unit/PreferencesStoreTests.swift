@@ -32,7 +32,7 @@ final class PreferencesStoreTests: XCTestCase {
         var invalid = valid; invalid.key.softness = 0
         XCTAssertThrowsError(try store.save(invalid))
         XCTAssertEqual(try store.load(), valid)
-        invalid = valid; invalid.greenScreen = true
+        invalid = valid; invalid.selectedScene = 4
         XCTAssertThrowsError(try store.save(invalid))
     }
     func testCorruptAndFutureSettingsAreReportedWithoutRewriting() throws {

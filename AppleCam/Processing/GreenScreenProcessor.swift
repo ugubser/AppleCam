@@ -20,7 +20,7 @@ final class GreenScreenProcessor {
     let width: Int
     let height: Int
 
-    init(background image: CGImage, width: Int = CameraContract.width, height: Int = CameraContract.height) throws {
+    init(background image: CGImage? = nil, width: Int = CameraContract.width, height: Int = CameraContract.height) throws {
         guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
             throw CameraError.message("Metal is unavailable. Green-screen processing cannot start.")
         }
@@ -42,7 +42,7 @@ final class GreenScreenProcessor {
         self.cache = cache
         context = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
         background = try Self.makeBuffer(width: width, height: height)
-        let source = CIImage(cgImage: image)
+        let source = image.map { CIImage(cgImage: $0) } ?? CIImage(color: .clear).cropped(to: CGRect(x: 0, y: 0, width: width, height: height))
         let scale = max(CGFloat(width) / source.extent.width, CGFloat(height) / source.extent.height)
         let scaled = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
         let centered = scaled.transformed(by: CGAffineTransform(translationX: (CGFloat(width) - scaled.extent.width) / 2,
@@ -54,7 +54,7 @@ final class GreenScreenProcessor {
         defer { CVPixelBufferUnlockBaseAddress(background, .readOnly) }
         let base = CVPixelBufferGetBaseAddress(background)!.assumingMemoryBound(to: UInt8.self)
         for y in 0..<height {
-            for x in 0..<width where base[y * CVPixelBufferGetBytesPerRow(background) + x * 4 + 3] != 255 {
+            for x in 0..<width where image != nil && base[y * CVPixelBufferGetBytesPerRow(background) + x * 4 + 3] != 255 {
                 throw CameraError.message("This background contains transparency. Choose an opaque PNG or JPEG.")
             }
         }
@@ -99,7 +99,7 @@ final class GreenScreenProcessor {
 
     /// The returned buffer is a local-only mask. `output` always contains the composite.
     @discardableResult
-    func render(_ input: CVPixelBuffer, into output: CVPixelBuffer, settings: KeySettings, maskPreview: Bool = false) throws -> CVPixelBuffer? {
+    func render(_ input: CVPixelBuffer, into output: CVPixelBuffer, settings: KeySettings, maskPreview: Bool = false, transparent: Bool = false) throws -> CVPixelBuffer? {
         guard settings.isValid else { throw CameraError.message("Invalid green-screen settings. Pick a green screen colour and try again.") }
         let source = try texture(input), backdrop = try texture(background), destination = try texture(output), mask = try texture(maskBuffer)
         guard let command = commandQueue.makeCommandBuffer(), let first = command.makeComputeCommandEncoder() else {
@@ -108,6 +108,7 @@ final class GreenScreenProcessor {
         var values: [Float] = [settings.tolerance, settings.softness, settings.spill, settings.protection,
                                settings.fillHoles, Float(settings.colors.count), maskPreview ? 1 : 0]
         for c in settings.colors { values += [c.x, c.y, c.z] }
+        values.append(transparent ? 1 : 0)
         first.setComputePipelineState(mattePipeline)
         first.setTexture(source.1, index: 0); first.setTexture(matte, index: 1)
         first.setBytes(&values, length: values.count * MemoryLayout<Float>.size, index: 0)
@@ -196,7 +197,10 @@ final class GreenScreenProcessor {
         float3 foreground = clamp(linearRGB(c) - (1.0f-a)*linearRGB(key), float3(0), float3(a));
         foreground.g -= p[2]*max(0.0f, foreground.g-max(foreground.r,foreground.b));
         float3 composite = foreground+(1.0f-a)*linearRGB(background.read(pos).rgb);
-        output.write(float4(encodedRGB(clamp(composite,0.0f,1.0f)),1),pos);
+        if (p[7 + uint(p[5])*3] > 0) {
+            float3 rgb = a > 0.00001f ? encodedRGB(clamp(foreground/a,0.0f,1.0f))*a : float3(0);
+            output.write(float4(rgb,a),pos);
+        } else output.write(float4(encodedRGB(clamp(composite,0.0f,1.0f)),1),pos);
         if (p[6] > 0) mask.write(float4(float3(a),1),pos);
     }
     """

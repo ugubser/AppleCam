@@ -12,9 +12,10 @@ final class CameraProfileTests: XCTestCase {
             let background: SavedBackground
         }
         let migrated = try JSONDecoder().decode(SavedPreferences.self, from: JSONEncoder().encode(Legacy(key: key, background: background)))
-        XCTAssertEqual(migrated.version, 2); XCTAssertEqual(migrated.profiles.count, 1)
+        XCTAssertEqual(migrated.version, 3); XCTAssertEqual(migrated.profiles.count, 1)
         XCTAssertEqual(migrated.cameraID, "old-camera"); XCTAssertEqual(migrated.key, key)
-        XCTAssertEqual(migrated.profile.backgrounds, [background, nil, nil, nil])
+        XCTAssertEqual(migrated.profile.backgrounds, [nil, nil, nil, nil])
+        XCTAssertEqual(migrated.scenes[0].layers.last?.source.asset?.id, background.id)
         XCTAssertEqual(migrated.profile.capture, CaptureConfiguration())
         XCTAssertTrue(migrated.greenScreen); XCTAssertEqual(migrated.preview, .mask)
         XCTAssertEqual(try JSONDecoder().decode(SavedPreferences.self, from: JSONEncoder().encode(migrated)), migrated)

@@ -5,6 +5,22 @@
 "objectVersion" = "56";
 "archiveVersion" = "1";
 "objects" = {
+"6FE54532B4784CEE89BA04ED" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneRuntime.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"5C4C94CC54BC451FBA6C3586" = { "isa" = "PBXBuildFile"; "fileRef" = "6FE54532B4784CEE89BA04ED"; };
+"93517269DD914CF3823465F8" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneOutput.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"20A9E94E00AD4653B6FB7EE9" = { "isa" = "PBXBuildFile"; "fileRef" = "93517269DD914CF3823465F8"; };
+"105D96028C7C45B49AF7FB11" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneMediaSource.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"ED22E55D2B5348B08652D168" = { "isa" = "PBXBuildFile"; "fileRef" = "105D96028C7C45B49AF7FB11"; };
+"8E031198D3AF4679BF3973D3" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneEditor.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"0445FB0160DC44809D08F422" = { "isa" = "PBXBuildFile"; "fileRef" = "8E031198D3AF4679BF3973D3"; };
+"BBA72ABAB9BF40FD84BC1A28" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneCompositor.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"4744490913014906BCC8CA75" = { "isa" = "PBXBuildFile"; "fileRef" = "BBA72ABAB9BF40FD84BC1A28"; };
+"11C52312E39F427CBFD14ABE" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/CaptureSelection.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"B1CB989B6C1449338BEAE039" = { "isa" = "PBXBuildFile"; "fileRef" = "11C52312E39F427CBFD14ABE"; };
+"F7EED427BBA54772AF4E4146" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/BrowserSceneSource.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"61A96FCDB0D54379845211FF" = { "isa" = "PBXBuildFile"; "fileRef" = "F7EED427BBA54772AF4E4146"; };
+"D9D9A5D309DE40DCB8052569" = { "isa" = "PBXFileReference"; "path" = "Shared/Scene.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"46E0A092AB9D4FF39F259F06" = { "isa" = "PBXBuildFile"; "fileRef" = "D9D9A5D309DE40DCB8052569"; };
 "79A91BE4E4B54489BF4A8D65" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Resources/AppIcon.icns"; "lastKnownFileType" = "image.icns"; "sourceTree" = "<group>"; };
 "12B19E42F4A44B73AFFFE3E0" = { "isa" = "PBXBuildFile"; "fileRef" = "79A91BE4E4B54489BF4A8D65"; };
 "83CD3C00C02C44F09F930B0F" = { "isa" = "PBXResourcesBuildPhase"; "buildActionMask" = "2147483647"; "files" = ("12B19E42F4A44B73AFFFE3E0",); "runOnlyForDeploymentPostprocessing" = "0"; };
@@ -138,6 +154,14 @@
 "isa" = "PBXGroup";
 "sourceTree" = "<group>";
 "children" = (
+"6FE54532B4784CEE89BA04ED",
+"93517269DD914CF3823465F8",
+"105D96028C7C45B49AF7FB11",
+"8E031198D3AF4679BF3973D3",
+"BBA72ABAB9BF40FD84BC1A28",
+"11C52312E39F427CBFD14ABE",
+"F7EED427BBA54772AF4E4146",
+"D9D9A5D309DE40DCB8052569",
 "79A91BE4E4B54489BF4A8D65",
 "084D9D66408C45138B7DECC4",
 "25D0E8BAE5FD4B8CAFE5729E",
@@ -253,16 +277,16 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 "DEBUG_INFORMATION_FORMAT" = "dwarf";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.1.0";
+"MARKETING_VERSION" = "0.2.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
-"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+"MACOSX_DEPLOYMENT_TARGET" = "15.2";
 "SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
 "CODE_SIGN_STYLE" = "Automatic";
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "14";
+"CURRENT_PROJECT_VERSION" = "15";
 };
 };
 "94317301ACBFD4C7A4B09CFF" = {
@@ -368,6 +392,14 @@
 "isa" = "PBXSourcesBuildPhase";
 "buildActionMask" = "2147483647";
 "files" = (
+"5C4C94CC54BC451FBA6C3586",
+"20A9E94E00AD4653B6FB7EE9",
+"ED22E55D2B5348B08652D168",
+"0445FB0160DC44809D08F422",
+"4744490913014906BCC8CA75",
+"B1CB989B6C1449338BEAE039",
+"61A96FCDB0D54379845211FF",
+"46E0A092AB9D4FF39F259F06",
 "5CBF57EDF8F843DD988F8605",
 "D5FAB1A6FD1B41C6948556C5",
 "B911033332A748A4830C37DF",
@@ -433,16 +465,16 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.1.0";
+"MARKETING_VERSION" = "0.2.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
-"MACOSX_DEPLOYMENT_TARGET" = "15.0";
+"MACOSX_DEPLOYMENT_TARGET" = "15.2";
 "SWIFT_OPTIMIZATION_LEVEL" = "-O";
 "CODE_SIGN_STYLE" = "Automatic";
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "14";
+"CURRENT_PROJECT_VERSION" = "15";
 };
 };
 "C7BCA3C3965F5D88DF9B6A7C" = {
