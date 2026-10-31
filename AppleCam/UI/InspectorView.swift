@@ -84,7 +84,7 @@ private struct LayerSections: View {
         } header: {
             Text("Position and size")
         } footer: {
-            Text(layer.locked ? "Unlock placement to move or resize this layer." : "Percent of the canvas. Drag the layer or its corner handle on the canvas.")
+            Text(layer.locked ? "Unlock placement to move or resize this layer." : "Percent of the canvas. Drag the layer or its corner handles on the canvas.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .disabled(layer.locked)

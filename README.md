@@ -8,7 +8,7 @@ Built with Swift, SwiftUI, AVFoundation, Core Image, Metal and Apple's Core Medi
 
 ## Current status
 
-Version **0.4.0, build 17** makes browser, window and screen layers work: window and screen layers use the Screen Recording permission and an in-app chooser, browser layers survive occasional WebKit snapshot failures at 60 fps, and the local preview is shown through a GPU display layer so 3840 × 2160 at 60 fps stays responsive. Build 16 (0.3.0) rearranged the window into sidebar, canvas and inspector. The source, unsigned verification build and locally development-signed build are updated; build 17 has not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
+Version **0.4.1, build 18** fixes canvas editing of layers covered by a larger layer: the selected layer's frame and four corner handles are always reachable, and clicking again selects the layer underneath. Version 0.4.0 (build 17) made browser, window and screen layers work: window and screen layers use the Screen Recording permission and an in-app chooser, browser layers survive occasional WebKit snapshot failures at 60 fps, and the local preview is shown through a GPU display layer so 3840 × 2160 at 60 fps stays responsive. Build 16 (0.3.0) rearranged the window into sidebar, canvas and inspector. The source, unsigned verification build and locally development-signed build are updated; builds 17 and 18 have not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
 
 The build-17 validation run passed **130 automated tests** (build 16: 123; build 15: 115). A separate native AppKit integration check captured generated video through public WebKit snapshots, including an obscured rendering window, and verified silence, pause and resume. Local synthetic scene output was observed at about 30 fps in the app. These checks do not qualify live YouTube, screen permission UX, arbitrary cameras, or sustained Teams calls. Historical capture measurements and their limits remain in [the validation plan](docs/VALIDATION_PLAN.md).
 
@@ -18,14 +18,14 @@ Releases use annotated Git tags named `vMAJOR.MINOR` (for example, `v0.2`); patc
 
 - `v0.1`: build 14, the previous release with per-camera profiles, background shortcuts and approved branding.
 - `v0.2`: build 15, shared scenes and editable media layers. Runtime acceptance limits are recorded above and in the validation plan; a source tag does not imply a notarized distribution.
-- Versions 0.3.0 (build 16) and 0.4.0 (build 17) are committed but not yet tagged.
+- Versions 0.3.0 (build 16), 0.4.0 (build 17) and 0.4.1 (build 18) are committed but not yet tagged.
 
 ## Window layout
 
 The window follows the macOS sidebar–content–inspector pattern, so the live canvas never scrolls out of view:
 
 - **Sidebar** (left): the four scene buttons (⌘1–⌘4) and the selected scene's layers, front at the top. Drag rows to reorder, use the eye and lock buttons, right-click for more, press Delete to remove, and use **Add Layer** at the bottom.
-- **Canvas** (centre): the live preview, with drag-to-move and a corner handle to resize the selected layer. The status bar shows state (Stopped / Preview / Sending), messages and frame rates. Toolbar: **Preview** (⌘R), **Send to AppleCam** (⇧⌘R), **Stop** (⌘.) and the inspector toggle.
+- **Canvas** (centre): the live preview. The selected layer shows a blue frame you can drag to move, with a handle on each corner to resize it (the opposite corner stays put). The selected layer is always on top for editing, even when a larger layer covers it; click the same spot again to select the layer underneath. Locked layers show a lock badge instead of handles. The status bar shows state (Stopped / Preview / Sending), messages and frame rates. Toolbar: **Preview** (⌘R), **Send to AppleCam** (⇧⌘R), **Stop** (⌘.) and the inspector toggle.
 - **Inspector** (right), with three tabs: **Layer** (scene name, canvas colour, and the selected layer's name, placement, Fit/Fill and source controls), **Green Screen** (samples, Picture/Mask preview and keying sliders), and **Output** (camera, capture format, canvas output format and camera extension installation).
 
 Text and number fields apply on Return or when you leave the field, and Escape restores the current value. A value that isn't accepted beeps and reverts; blank names are rejected.

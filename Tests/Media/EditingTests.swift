@@ -50,6 +50,41 @@ final class LayerGeometryTests: XCTestCase {
         XCTAssertEqual(free.width, 0.75, accuracy: 1e-12); XCTAssertEqual(free.height, 0.55, accuracy: 1e-12)
         XCTAssertEqual(LayerGeometry.resized(start, by: CGSize(width: -1e6, height: 0), canvas: canvas).width, 0.001)
     }
+    func testResizeFromTopLeadingKeepsOppositeCornerFixed() {
+        var start = LayerPlacement(); start.x = 0.25; start.y = 0.25; start.width = 0.5; start.height = 0.5; start.aspectLocked = false
+        // Dragging the top-left handle up and left by 20 % of the canvas grows the layer toward the top left.
+        let grown = LayerGeometry.resized(start, by: CGSize(width: -40, height: -20), canvas: canvas, from: .topLeading)
+        XCTAssertEqual(grown.width, 0.7, accuracy: 1e-12); XCTAssertEqual(grown.height, 0.7, accuracy: 1e-12)
+        XCTAssertEqual(grown.x + grown.width, 0.75, accuracy: 1e-12); XCTAssertEqual(grown.y + grown.height, 0.75, accuracy: 1e-12)
+        let mixed = LayerGeometry.resized(start, by: CGSize(width: 40, height: -20), canvas: canvas, from: .topTrailing)
+        XCTAssertEqual(mixed.x, 0.25); XCTAssertEqual(mixed.width, 0.7, accuracy: 1e-12)
+        XCTAssertEqual(mixed.y + mixed.height, 0.75, accuracy: 1e-12)
+        start.aspectLocked = true
+        let locked = LayerGeometry.resized(start, by: CGSize(width: 20, height: 0), canvas: canvas, from: .bottomLeading)
+        XCTAssertEqual(locked.width, 0.4, accuracy: 1e-12); XCTAssertEqual(locked.height, 0.4, accuracy: 1e-12)
+        XCTAssertEqual(locked.x + locked.width, 0.75, accuracy: 1e-12); XCTAssertEqual(locked.y, 0.25)
+    }
+    func testVisibleRectIsClippedToCanvas() {
+        var placement = LayerPlacement(); placement.x = -0.25; placement.y = -0.25; placement.width = 1.25; placement.height = 1.25
+        XCTAssertEqual(LayerGeometry.visibleRect(placement, canvas: canvas), CGRect(x: 0, y: 0, width: 200, height: 100))
+        placement.x = 2
+        XCTAssertNil(LayerGeometry.visibleRect(placement, canvas: canvas), "A layer entirely off the canvas has no frame")
+    }
+    func testClickSelectsTopmostThenCyclesToLayersUnderneath() {
+        var cover = SceneLayer(name: "Webcam", source: .camera); cover.placement.x = -0.2; cover.placement.width = 1.4
+        var small = SceneLayer(name: "Browser", source: .camera); small.placement.width = 0.5; small.placement.height = 0.5
+        var hidden = SceneLayer(name: "Hidden", source: .camera); hidden.visible = false
+        let background = SceneLayer(name: "Background", source: .camera)
+        let layers = [cover, small, hidden, background] // top first
+        let point = CGPoint(x: 20, y: 20)
+        XCTAssertEqual(LayerGeometry.layer(at: point, in: layers, canvas: canvas, selected: nil), cover.id)
+        XCTAssertEqual(LayerGeometry.layer(at: point, in: layers, canvas: canvas, selected: cover.id), small.id)
+        XCTAssertEqual(LayerGeometry.layer(at: point, in: layers, canvas: canvas, selected: small.id), background.id)
+        XCTAssertEqual(LayerGeometry.layer(at: point, in: layers, canvas: canvas, selected: background.id), cover.id)
+        // Outside the small layer, clicking the selected small layer's area is impossible; others cycle among themselves.
+        XCTAssertEqual(LayerGeometry.layer(at: CGPoint(x: 150, y: 80), in: layers, canvas: canvas, selected: small.id), cover.id)
+        XCTAssertNil(LayerGeometry.layer(at: CGPoint(x: 150, y: 80), in: [small], canvas: canvas, selected: nil))
+    }
     func testInspectorSizeKeepsAspectWhenLocked() {
         var start = LayerPlacement(); start.width = 0.4; start.height = 0.2
         let wider = LayerGeometry.sized(start, width: 0.8)
