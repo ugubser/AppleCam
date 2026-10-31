@@ -36,6 +36,44 @@ final class CameraPreferencesTests: XCTestCase {
         XCTAssertEqual(restored.key.protection, 0.81); XCTAssertFalse(restored.running); XCTAssertFalse(restored.publishing)
         restored.selection = "camera-b"; XCTAssertEqual(restored.key.spill, 0.25)
     }
+    @MainActor func testBackgroundPictureIsSavedPerCameraAndExclusiveWithGreenScreen() throws {
+        let store = try store(), model = CameraModel(preferencesStore: store)
+        model.selection = "camera-a"
+        model.setBackgroundMask(true); XCTAssertFalse(model.useBackgroundMask, "Needs a picture first")
+        model.setGreenScreen(true)
+        var averager = try PlateAverager(width: 64, height: 32)
+        try averager.add(GreenScreenProcessor.makeBuffer(width: 64, height: 32))
+        model.pendingPlate = PendingPlate(capture: try averager.result())
+        model.acceptBackgroundPicture()
+        let plate = try XCTUnwrap(model.backgroundPlate)
+        XCTAssertTrue(model.useBackgroundMask); XCTAssertFalse(model.useGreenScreen, "Accepting a picture turns the green screen off")
+        XCTAssertNil(model.pendingPlate); XCTAssertNotNil(model.backgroundPlateImage)
+        XCTAssertEqual(plate.width, 64); XCTAssertTrue(FileManager.default.fileExists(atPath: store.mediaURL(plate.asset).path))
+        model.setGreenScreen(true)
+        XCTAssertFalse(model.useBackgroundMask); XCTAssertEqual(model.backgroundPlate, plate, "The picture is kept for later")
+        model.setBackgroundMask(true); XCTAssertFalse(model.useGreenScreen)
+        model.difference.threshold = 0.2
+        model.selection = "camera-b"
+        XCTAssertNil(model.backgroundPlate); XCTAssertFalse(model.useBackgroundMask); XCTAssertEqual(model.difference, DifferenceKeySettings())
+        model.selection = "camera-a"
+        XCTAssertEqual(model.backgroundPlate, plate); XCTAssertTrue(model.useBackgroundMask)
+        model.flushPreferences()
+        let restored = CameraModel(preferencesStore: PreferencesStore(directory: store.directory))
+        XCTAssertEqual(restored.backgroundPlate, plate); XCTAssertTrue(restored.useBackgroundMask)
+        XCTAssertEqual(restored.difference.threshold, 0.2); XCTAssertNotNil(restored.backgroundPlateImage)
+    }
+    @MainActor func testBackgroundMaskRefusesAPictureOfAnotherCameraFormat() throws {
+        let store = try store(), model = CameraModel(preferencesStore: store)
+        model.selection = "camera-a"; model.captureConfiguration = .init(width: 1280, height: 720, fps: 30)
+        var averager = try PlateAverager(width: 64, height: 32)
+        try averager.add(GreenScreenProcessor.makeBuffer(width: 64, height: 32))
+        model.pendingPlate = PendingPlate(capture: try averager.result()); model.acceptBackgroundPicture()
+        let camera = CameraScene(name: "Camera", layers: [SceneLayer(name: "Me", source: .camera)])
+        XCTAssertThrowsError(try model.cameraKeying(for: camera)) { XCTAssertTrue($0.localizedDescription.contains("64 × 32")) }
+        XCTAssertNoThrow(try model.cameraKeying(for: CameraScene(name: "No camera")), "Scenes without a webcam are unaffected")
+        model.setBackgroundMask(false)
+        XCTAssertEqual(try model.cameraKeying(for: camera), .off)
+    }
     @MainActor func testImportedImageSurvivesOriginalRemoval() throws {
         let store = try store(); try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
         let original = store.directory.appendingPathComponent("original.png"); try FileManager.default.copyItem(at: fixture, to: original)

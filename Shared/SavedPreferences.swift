@@ -16,9 +16,12 @@ public struct CameraProfile: Codable, Equatable, Sendable {
     /// No longer shown in the interface (v0.3 uses an inspector). Kept so v0.2 can still read these settings.
     public var controlsExpanded = true
     public var capture: CaptureConfiguration?
+    /// Optional so settings written before version 0.5 still decode.
+    public var backgroundMask: BackgroundMaskProfile?
     public init() {}
+    public var mask: BackgroundMaskProfile { get { backgroundMask ?? BackgroundMaskProfile() } set { backgroundMask = newValue } }
     public var isValid: Bool {
-        key.isValid && backgrounds.count == 4 && (capture?.isValid ?? true)
+        key.isValid && backgrounds.count == 4 && (capture?.isValid ?? true) && mask.isValid && !(greenScreen && mask.enabled)
     }
     public var imageReferences: Set<SavedBackground> { Set(backgrounds.compactMap { $0 } + [background].compactMap { $0 }) }
 }
@@ -31,8 +34,9 @@ public struct SavedPreferences: Codable, Equatable, Sendable {
     public var scenes = CameraScene.defaults()
     public var selectedScene = 0
     public var output = CaptureConfiguration()
+    /// Every private file the settings refer to: scene media and each camera's background picture.
     public var mediaReferences: Set<MediaAsset> {
-        Set(scenes.flatMap(\.layers).compactMap { $0.source.asset })
+        Set(scenes.flatMap(\.layers).compactMap { $0.source.asset } + profiles.values.compactMap { $0.mask.plate?.asset })
     }
     public init() {}
     public var profile: CameraProfile {
@@ -189,6 +193,16 @@ public final class PreferencesStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = mediaURL(asset)
         try FileManager.default.copyItem(at: source, to: destination)
+        do { try save(settings, deferCleanup: deferCleanup) }
+        catch { try? FileManager.default.removeItem(at: destination); throw error }
+    }
+    /// Writes a new background picture and the settings that refer to it; the replaced picture is removed by cleanup.
+    public func importPlate(_ data: Data, plate: BackgroundPlate, settings: SavedPreferences, deferCleanup: Bool = false) throws {
+        guard plate.isValid, settings.mediaReferences.contains(plate.asset) else { throw CameraError.message("Invalid background picture.") }
+        try settings.validate()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = mediaURL(plate.asset)
+        try data.write(to: destination, options: .atomic)
         do { try save(settings, deferCleanup: deferCleanup) }
         catch { try? FileManager.default.removeItem(at: destination); throw error }
     }

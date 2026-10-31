@@ -30,10 +30,28 @@ import ScreenCaptureKit
     var sceneThumbnails: [UUID: CGImage] = [:]
     var useGreenScreen = false {
         didSet {
-            if !useGreenScreen { previewMode = .composite }
+            if !useGreenScreen && !useBackgroundMask { previewMode = .composite }
             sampling = false; savePreferences(); requestLiveUpdate()
         }
     }
+    /// Separates webcam layers from a picture of the empty background. Exclusive with `useGreenScreen`.
+    var useBackgroundMask = false {
+        didSet {
+            if !useGreenScreen && !useBackgroundMask { previewMode = .composite }
+            savePreferences(); requestLiveUpdate()
+        }
+    }
+    var difference = DifferenceKeySettings() { didSet { savePreferences(); requestLiveUpdate() } }
+    /// The accepted background picture of the selected camera.
+    private(set) var backgroundPlate: BackgroundPlate?
+    /// A decoded copy of `backgroundPlate` for the inspector; loaded on demand.
+    private(set) var backgroundPlateImage: CGImage?
+    /// Seconds left before the background picture is taken; nil when no countdown runs.
+    private(set) var plateCountdown: Int?
+    private(set) var capturingPlate = false
+    /// A new picture waiting for review. The review sheet completes it with `acceptBackgroundPicture` or `discardBackgroundPicture`.
+    var pendingPlate: PendingPlate?
+    static let plateCountdownSeconds = 2
     var previewMode = KeyPreview.composite { didSet { savePreferences(); requestLiveUpdate() } }
     var key = KeySettings() { didSet { savePreferences(); requestLiveUpdate() } }
     var sampling = false
@@ -60,6 +78,7 @@ import ScreenCaptureKit
     @ObservationIgnored private var cleanupTask: Task<Void, Never>?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var requestedPublish = false
+    @ObservationIgnored private var plateTask: Task<Void, Never>?
     private struct PreviewFrame {
         let buffer: CVPixelBuffer
         let thumbnail: CGImage?
@@ -73,7 +92,7 @@ import ScreenCaptureKit
     static let saveDelay: UInt64 = 400_000_000
     var activeScene: CameraScene { scenes[selectedScene] }
     var selectedLayer: SceneLayer? { activeScene.layers.first { $0.id == selectedLayerID } }
-    var isMaskPreview: Bool { previewMode == .mask && useGreenScreen && activeScene.needsCamera }
+    var isMaskPreview: Bool { previewMode == .mask && (useGreenScreen || useBackgroundMask) && activeScene.needsCamera }
     var previewAspect: Double {
         let c = isMaskPreview ? captureConfiguration : outputConfiguration
         return Double(c.width) / Double(c.height)
@@ -152,6 +171,8 @@ import ScreenCaptureKit
         profile.cameraName = cameraID == "pattern" ? "Labelled test pattern (no webcam)" :
             (cameras.first { $0.uniqueID == cameraID }?.localizedName ?? savedCameraName)
         profile.greenScreen = useGreenScreen; profile.preview = previewMode; profile.key = key
+        var mask = BackgroundMaskProfile(); mask.enabled = useBackgroundMask; mask.plate = backgroundPlate; mask.settings = difference
+        profile.backgroundMask = mask
         profile.capture = captureConfiguration
         return profile
     }
@@ -163,6 +184,7 @@ import ScreenCaptureKit
     }
     private func applyProfile(_ profile: CameraProfile) {
         savedCameraName = profile.cameraName; key = profile.key; useGreenScreen = profile.greenScreen
+        useBackgroundMask = profile.mask.enabled; difference = profile.mask.settings; setPlate(profile.mask.plate)
         previewMode = profile.preview
         updateCapabilities()
         captureConfiguration = profile.capture ?? (availableConfigurations.first(where: { $0 == CaptureConfiguration() }) ?? availableConfigurations.first ?? CaptureConfiguration())
@@ -346,7 +368,77 @@ import ScreenCaptureKit
         if scene == selectedScene { selectedLayerID = layerID }; settingsError = false; settingsMessage = "Media imported and settings saved."
         requestLiveUpdate()
     }
-    func setGreenScreen(_ enabled: Bool) { useGreenScreen = enabled }
+    func setGreenScreen(_ enabled: Bool) {
+        if enabled { useBackgroundMask = false }
+        useGreenScreen = enabled
+    }
+    /// Turning the background mask on needs an accepted background picture and turns the green screen off.
+    func setBackgroundMask(_ enabled: Bool) {
+        guard !enabled || backgroundPlate != nil else { status = "Take a background picture first."; return }
+        if enabled { useGreenScreen = false }
+        useBackgroundMask = enabled
+    }
+    var canTakeBackgroundPicture: Bool {
+        running && !busy && plateCountdown == nil && !capturingPlate && pendingPlate == nil &&
+            activeScene.layers.contains { $0.visible && $0.source == .camera }
+    }
+    /// Counts down, then averages a few raw webcam frames and offers the picture for review.
+    func takeBackgroundPicture() {
+        guard canTakeBackgroundPicture else { return }
+        let event = runtime.eventID
+        plateTask = Task {
+            defer { plateCountdown = nil; capturingPlate = false; plateTask = nil }
+            for remaining in stride(from: Self.plateCountdownSeconds, through: 1, by: -1) {
+                plateCountdown = remaining
+                do { try await Task.sleep(nanoseconds: 1_000_000_000) } catch { return }
+            }
+            guard event == runtime.eventID, running else { return }
+            plateCountdown = nil; capturingPlate = true
+            do {
+                let capture = try await runtime.output.capturePlate()
+                guard !Task.isCancelled, event == runtime.eventID else { return }
+                pendingPlate = PendingPlate(capture: capture)
+                status = "Check the background picture, then use it or take it again."
+            } catch { status = error.localizedDescription }
+        }
+    }
+    func cancelBackgroundPicture() { plateTask?.cancel() }
+    func discardBackgroundPicture() { pendingPlate = nil }
+    /// Stores the reviewed picture for the selected camera and switches its webcam layers to the background mask.
+    func acceptBackgroundPicture() {
+        guard let pending = pendingPlate else { return }
+        pendingPlate = nil
+        guard !restorationFailed else { status = "Save current settings before taking a background picture."; return }
+        let plate = BackgroundPlate(width: pending.capture.width, height: pending.capture.height)
+        var next = snapshot()
+        var mask = next.profile.mask; mask.plate = plate; mask.enabled = true; next.profile.backgroundMask = mask
+        next.profile.greenScreen = false
+        do {
+            try preferencesStore.importPlate(pending.capture.png, plate: plate, settings: next, deferCleanup: running || busy)
+        } catch { status = "The background picture could not be saved: \(error.localizedDescription)"; return }
+        saveTask?.cancel(); saveTask = nil; preferences = next
+        restoring = true
+        setPlate(plate, image: pending.capture.image); useGreenScreen = false; useBackgroundMask = true
+        restoring = false
+        settingsError = false; settingsMessage = "Background picture saved."
+        status = "Background mask on. Step back into view to check the result."
+        requestLiveUpdate()
+    }
+    private func setPlate(_ plate: BackgroundPlate?, image: CGImage? = nil) {
+        guard plate != backgroundPlate || image != nil else { return }
+        backgroundPlate = plate
+        backgroundPlateImage = image ?? plate.flatMap { try? runtime.loadPlate($0).image }
+    }
+    /// The keying sent to the scene. A background mask without a matching picture stops the scene with an explanation.
+    func cameraKeying(for scene: CameraScene) throws -> CameraKeying {
+        if useGreenScreen { return .greenScreen(key) }
+        guard useBackgroundMask else { return .off }
+        guard let plate = backgroundPlate else { throw CameraError.message("Take a background picture before using the background mask.") }
+        if scene.needsCamera, let mismatch = plate.mismatch(width: captureConfiguration.width, height: captureConfiguration.height) {
+            throw CameraError.message(mismatch)
+        }
+        return .backgroundMask(difference, try runtime.loadPlate(plate))
+    }
     func beginSample(append: Bool) { guard !samplePending else { return }; if sampling { sampling = false; return }; appendSample = append; sampling = true }
     func removeSample(_ index: Int) {
         guard !samplePending, key.colors.indices.contains(index), key.colors.count > 1 else { return }
@@ -405,7 +497,7 @@ import ScreenCaptureKit
                         }
                     }
                     try Task.checkCancellation()
-                    try await runtime.apply(scene: scene, key: key, greenScreen: useGreenScreen, mask: previewMode == .mask,
+                    try await runtime.apply(scene: scene, keying: try cameraKeying(for: scene), mask: previewMode == .mask,
                         output: outputConfiguration, cameraMode: selection == "pattern" ? .pattern : .camera(selection), capture: captureConfiguration, publish: requestedPublish, mayCommit: { self.requestID == request && applied == self.revision && !Task.isCancelled })
                     try Task.checkCancellation()
                     guard requestID == request else { return }
@@ -494,7 +586,7 @@ import ScreenCaptureKit
     }
     private func stopRateTimer() { rateTimer?.invalidate(); rateTimer = nil; captureFPS = 0; previewFPS = 0 }
     func stop() {
-        flushPreferences(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
+        flushPreferences(); plateTask?.cancel(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
         running = false; busy = true; scenePreparing = false; previewMailbox.invalidate(); clearPreview(); stopRateTimer()
         let request = requestID
         Task {
@@ -503,4 +595,10 @@ import ScreenCaptureKit
             busy = false; publishing = false; status = "Stopped — no new frames sent."
         }
     }
+}
+
+/// A background picture waiting for review.
+struct PendingPlate: Identifiable {
+    let id = UUID()
+    let capture: PlateCapture
 }

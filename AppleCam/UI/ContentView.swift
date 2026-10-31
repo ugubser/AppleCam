@@ -18,7 +18,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $inspectorShown) {
             InspectorView(model: model, tab: $tab)
-                .inspectorColumnWidth(min: Self.inspectorMin, ideal: 350, max: 480)
+                .inspectorColumnWidth(min: Self.inspectorMin, ideal: 360, max: 480)
         }
         .navigationTitle("AppleCam")
         .navigationSubtitle("\(model.activeScene.name) · \(model.outputConfiguration.label)")
@@ -26,12 +26,15 @@ struct ContentView: View {
         .sheet(item: Binding(get: { model.captureRequest }, set: { if $0 == nil { model.finishCaptureChoice(nil) } })) { request in
             CaptureSourceSheet(model: model, request: request)
         }
+        .sheet(item: Binding(get: { model.pendingPlate }, set: { if $0 == nil { model.discardBackgroundPicture() } })) { pending in
+            BackgroundPictureReview(model: model, pending: pending)
+        }
         // No extra window-level minimum frame: the split view derives the window minimum from its columns, and a
         // competing frame makes AppKit loop on constraint updates when the window reaches its minimum size.
     }
     static let sidebarMin: CGFloat = 210
     static let canvasMin: CGFloat = 380
-    static let inspectorMin: CGFloat = 300
+    static let inspectorMin: CGFloat = 332
 }
 
 private struct OutputToolbar: ToolbarContent {

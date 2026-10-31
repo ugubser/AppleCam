@@ -13,6 +13,7 @@ final class SceneCompositor {
     private let bounds: CGRect
     private var pool: CVPixelBufferPool?
     private var cameraKeyer: GreenScreenProcessor?
+    private var maskKeyer: BackgroundMaskProcessor?
     private var keyed: CVPixelBuffer?
     init(configuration: CaptureConfiguration) throws {
         guard configuration.isValid, let device = MTLCreateSystemDefaultDevice() else {
@@ -26,16 +27,27 @@ final class SceneCompositor {
         let status = CVPixelBufferPoolCreate(nil, nil, attributes as CFDictionary, &pool)
         guard status == kCVReturnSuccess else { throw CameraError.operation("Create scene frame pool", status) }
     }
-    func cameraImage(_ buffer: CVPixelBuffer, key: KeySettings, enabled: Bool, mask: Bool) throws -> (CIImage, CIImage?) {
-        guard enabled else { return (CIImage(cvPixelBuffer: buffer), nil) }
+    /// The webcam picture after keying, plus the local-only mask when `mask` is set.
+    func cameraImage(_ buffer: CVPixelBuffer, keying: CameraKeying, mask: Bool) throws -> (CIImage, CIImage?) {
         let width = CVPixelBufferGetWidth(buffer), height = CVPixelBufferGetHeight(buffer)
-        if cameraKeyer?.width != width || cameraKeyer?.height != height {
-            cameraKeyer = try GreenScreenProcessor(width: width, height: height)
+        if keyed.map({ CVPixelBufferGetWidth($0) != width || CVPixelBufferGetHeight($0) != height }) ?? true, keying != .off {
             keyed = try GreenScreenProcessor.makeBuffer(width: width, height: height)
         }
-        guard let cameraKeyer, let keyed else { throw CameraError.message("Camera keyer is unavailable.") }
-        let maskBuffer = try cameraKeyer.render(buffer, into: keyed, settings: key, maskPreview: mask, transparent: true)
-        return (CIImage(cvPixelBuffer: keyed), maskBuffer.map { CIImage(cvPixelBuffer: $0) })
+        switch keying {
+        case .off: return (CIImage(cvPixelBuffer: buffer), nil)
+        case .greenScreen(let key):
+            if cameraKeyer?.width != width || cameraKeyer?.height != height {
+                cameraKeyer = try GreenScreenProcessor(width: width, height: height)
+            }
+            guard let cameraKeyer, let keyed else { throw CameraError.message("Camera keyer is unavailable.") }
+            let maskBuffer = try cameraKeyer.render(buffer, into: keyed, settings: key, maskPreview: mask, transparent: true)
+            return (CIImage(cvPixelBuffer: keyed), maskBuffer.map { CIImage(cvPixelBuffer: $0) })
+        case .backgroundMask(let settings, let plate):
+            if maskKeyer?.plateID != plate.id { maskKeyer = try BackgroundMaskProcessor(plate: plate.image, id: plate.id) }
+            guard let maskKeyer, let keyed else { throw CameraError.message("Background mask is unavailable.") }
+            let maskBuffer = try maskKeyer.render(buffer, into: keyed, settings: settings, maskPreview: mask)
+            return (CIImage(cvPixelBuffer: keyed), maskBuffer.map { CIImage(cvPixelBuffer: $0) })
+        }
     }
     func compose(scene: CameraScene, images: [UUID: CIImage]) throws -> CVPixelBuffer? {
         guard scene.isValid else { throw CameraError.message("This scene contains invalid layer settings.") }

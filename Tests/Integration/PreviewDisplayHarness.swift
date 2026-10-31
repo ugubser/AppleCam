@@ -25,7 +25,7 @@ import SwiftUI
                 }
             }
             var scene = CameraScene(name: "Harness"); scene.canvasRed = 0.8; scene.canvasBlue = 0.2
-            let plan = SceneRenderPlan(scene: scene, sources: [:], key: KeySettings(), greenScreen: false, maskPreview: false)
+            let plan = SceneRenderPlan(scene: scene, sources: [:], keying: .off, maskPreview: false)
             do {
                 try await output.start(plan: plan, output: .init(width: 3840, height: 2160, fps: 60), cameraMode: .pattern, capture: .init(), publish: false)
                 try await Task.sleep(nanoseconds: 3_000_000_000)

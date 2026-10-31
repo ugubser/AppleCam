@@ -20,6 +20,8 @@
 "664EFA9CDB0842EA80C28CA7" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/InspectorView.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "688408C2F45D459C9B9077BF" = { "isa" = "PBXBuildFile"; "fileRef" = "664EFA9CDB0842EA80C28CA7"; };
 "5B77C32FD054431EB5D3231A" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/DraftField.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"06AFB1ADCFA449B3B469E02B" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/BackgroundPictureReview.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"C02CD1528E2044E0AFF4401A" = { "isa" = "PBXBuildFile"; "fileRef" = "06AFB1ADCFA449B3B469E02B"; };
 "5E1F3D5783FF4B75BB453E88" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/PreviewDisplay.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "1E16E7B2323F440D980408F9" = { "isa" = "PBXBuildFile"; "fileRef" = "5E1F3D5783FF4B75BB453E88"; };
 "11C1DD961AAA45589C01D7A4" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/CaptureSourceSheet.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
@@ -175,6 +177,7 @@
 "664EFA9CDB0842EA80C28CA7",
 "5B77C32FD054431EB5D3231A",
 "5E1F3D5783FF4B75BB453E88",
+"06AFB1ADCFA449B3B469E02B",
 "11C1DD961AAA45589C01D7A4",
 "BBA72ABAB9BF40FD84BC1A28",
 "11C52312E39F427CBFD14ABE",
@@ -202,7 +205,9 @@
 "4EDC8BFAFC6BD936B849F38C",
 "7680E48793D63431C053E91F",
 "D53380103A9FE396E45A524B",
+"234346CAA0FF407990AEA6B2",
 "0E39D8B58FD3218CC6AEF0F5",
+"1E377842EE7E4F0BA3FACBAD",
 );
 };
 "4EDC8BFAFC6BD936B849F38C" = {
@@ -295,7 +300,7 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 "DEBUG_INFORMATION_FORMAT" = "dwarf";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.4.1";
+"MARKETING_VERSION" = "0.5.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
 "MACOSX_DEPLOYMENT_TARGET" = "15.2";
@@ -304,7 +309,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "18";
+"CURRENT_PROJECT_VERSION" = "19";
 };
 };
 "94317301ACBFD4C7A4B09CFF" = {
@@ -419,6 +424,7 @@
 "688408C2F45D459C9B9077BF",
 "9A575C986E724027AA1731A4",
 "1E16E7B2323F440D980408F9",
+"C02CD1528E2044E0AFF4401A",
 "1DBAF81D836745E29403A43E",
 "4744490913014906BCC8CA75",
 "B1CB989B6C1449338BEAE039",
@@ -438,7 +444,9 @@
 "40603BA3B5307A2F7A4A4916",
 "33079164109A36AED028AF91",
 "453B0C7A5344AF09D6BAD5CF",
+"DD2E5401A54042C886008F4E",
 "1DFB6697979C9F916AB3BE85",
+"F9611D702A374450941437B8",
 );
 "runOnlyForDeploymentPostprocessing" = "0";
 };
@@ -489,7 +497,7 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.4.1";
+"MARKETING_VERSION" = "0.5.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
 "MACOSX_DEPLOYMENT_TARGET" = "15.2";
@@ -498,7 +506,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "18";
+"CURRENT_PROJECT_VERSION" = "19";
 };
 };
 "C7BCA3C3965F5D88DF9B6A7C" = {
@@ -544,6 +552,8 @@
 "lastKnownFileType" = "sourcecode.swift";
 "sourceTree" = "<group>";
 };
+"234346CAA0FF407990AEA6B2" = { "isa" = "PBXFileReference"; "path" = "Shared/BackgroundMask.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"DD2E5401A54042C886008F4E" = { "isa" = "PBXBuildFile"; "fileRef" = "234346CAA0FF407990AEA6B2"; };
 "D53380103A9FE396E45A524B" = {
 "isa" = "PBXFileReference";
 "lastKnownFileType" = "sourcecode.swift";
@@ -558,6 +568,8 @@
 "isa" = "PBXBuildFile";
 "fileRef" = "D53380103A9FE396E45A524B";
 };
+"1E377842EE7E4F0BA3FACBAD" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Processing/BackgroundMaskProcessor.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"F9611D702A374450941437B8" = { "isa" = "PBXBuildFile"; "fileRef" = "1E377842EE7E4F0BA3FACBAD"; };
 "0E39D8B58FD3218CC6AEF0F5" = {
 "isa" = "PBXFileReference";
 "lastKnownFileType" = "sourcecode.swift";

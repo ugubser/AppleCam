@@ -4,7 +4,7 @@ import AppleCamCore
 import SwiftUI
 
 enum InspectorTab: String, CaseIterable, Identifiable {
-    case layer = "Layer", key = "Green Screen", output = "Output"
+    case layer = "Layer", key = "Green Screen", backgroundMask = "Background Mask", output = "Output"
     var id: Self { self }
 }
 
@@ -16,11 +16,12 @@ struct InspectorView: View {
         VStack(spacing: 0) {
             Picker("Inspector", selection: $tab) {
                 ForEach(InspectorTab.allCases) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).labelsHidden().padding(10)
+            }.pickerStyle(.segmented).labelsHidden().controlSize(.small).padding(10)
             Divider()
             switch tab {
             case .layer: LayerInspector(model: model)
             case .key: GreenScreenInspector(model: model)
+            case .backgroundMask: BackgroundMaskInspector(model: model)
             case .output: OutputInspector(model: model)
             }
         }
@@ -176,7 +177,7 @@ private struct GreenScreenInspector: View {
             Section {
                 Toggle("Green screen", isOn: Binding(get: { model.useGreenScreen }, set: { model.setGreenScreen($0) })).disabled(model.busy)
             } footer: {
-                Text(model.useGreenScreen ? "Changes apply live to every webcam layer. Calibration belongs to the selected camera." :
+                Text(model.useGreenScreen ? "Changes apply live to every webcam layer. Calibration belongs to the selected camera. Turning this on turns the background mask off." :
                     "Off: webcam layers include your surroundings unless Apple Video Effects changes them.")
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -228,6 +229,82 @@ private struct GreenScreenInspector: View {
                 }
             }.disabled(!model.useGreenScreen)
         }.formStyle(.grouped)
+    }
+}
+
+// MARK: - Background mask
+
+private struct BackgroundMaskInspector: View {
+    @Bindable var model: CameraModel
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Background mask", isOn: Binding(get: { model.useBackgroundMask }, set: { model.setBackgroundMask($0) }))
+                    .disabled(model.busy || model.backgroundPlate == nil)
+            } footer: {
+                Text(model.backgroundPlate == nil ? "No green screen? Take a picture of the empty background; AppleCam then removes everything that still looks like it." :
+                    model.useBackgroundMask ? "Changes apply live to every webcam layer. Turning this on turns the green screen off." :
+                    "Off: webcam layers include your surroundings unless the green screen is on.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                PlatePicture(model: model)
+                HStack {
+                    if model.plateCountdown != nil {
+                        Button("Cancel") { model.cancelBackgroundPicture() }
+                    } else {
+                        Button(model.backgroundPlate == nil ? "Take Background Picture" : "Retake Background Picture") { model.takeBackgroundPicture() }
+                            .disabled(!model.canTakeBackgroundPicture)
+                    }
+                    if model.capturingPlate { ProgressView().controlSize(.small) }
+                }
+            } header: {
+                Text("Background picture")
+            } footer: {
+                Text(model.running ? "After you click, step out of view. The picture is taken \(CameraModel.plateCountdownSeconds) seconds later. Keep the camera, lighting and furniture as they are afterwards." :
+                    "Start a preview with a webcam layer to take the picture.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Group {
+                Section {
+                    Picker("Preview", selection: $model.previewMode) {
+                        ForEach(KeyPreview.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.segmented)
+                } footer: {
+                    Text(model.previewMode == .mask ? "White = kept · black = removed · grey = partly transparent. Local only; meetings receive the picture." :
+                        "Local preview only. Meetings always receive the finished picture.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Adjustments") {
+                    KeySlider(name: "Threshold", value: $model.difference.threshold, range: 0...0.5,
+                              hint: "How different from the background picture a pixel must be to stay. Raise it if background shows through.")
+                    KeySlider(name: "Softness", value: $model.difference.softness, range: 0.005...0.5,
+                              hint: "Widens the partly transparent range at edges.")
+                    KeySlider(name: "Ignore lighting", value: $model.difference.lighting, range: 0...1,
+                              hint: "Ignores brightness changes such as shadows and camera exposure, comparing colour more than brightness. Too much can remove clothing in the wall's colour.")
+                    KeySlider(name: "Clean up", value: $model.difference.cleanup, range: 0...1,
+                              hint: "Removes small background specks and fills small holes in you.")
+                }
+            }.disabled(!model.useBackgroundMask)
+        }.formStyle(.grouped)
+    }
+}
+
+private struct PlatePicture: View {
+    let model: CameraModel
+    var body: some View {
+        if let plate = model.backgroundPlate {
+            VStack(alignment: .leading, spacing: 4) {
+                if let image = model.backgroundPlateImage {
+                    Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 4)).accessibilityLabel("Background picture")
+                }
+                Text("\(String(plate.width)) × \(String(plate.height)) · \(plate.taken.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        } else {
+            Text("No background picture yet.").foregroundStyle(.secondary)
+        }
     }
 }
 

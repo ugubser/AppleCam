@@ -1,14 +1,38 @@
 #if SWIFT_PACKAGE
 import AppleCamCore
 #endif
+import Accelerate
 import AVFoundation
 import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
+
+/// A decoded background picture. Immutable and shared between the main actor and the output queue.
+final class LoadedPlate: @unchecked Sendable, Equatable {
+    let id: UUID
+    let image: CGImage
+    init(id: UUID, image: CGImage) { self.id = id; self.image = image }
+    static func == (a: LoadedPlate, b: LoadedPlate) -> Bool { a.id == b.id }
+}
+
+/// How webcam layers are separated from their surroundings. Green screen and background mask are exclusive.
+enum CameraKeying: Equatable {
+    case off
+    case greenScreen(KeySettings)
+    case backgroundMask(DifferenceKeySettings, LoadedPlate)
+    var isValid: Bool {
+        switch self {
+        case .off: return true
+        case .greenScreen(let key): return key.isValid
+        case .backgroundMask(let settings, _): return settings.isValid
+        }
+    }
+}
 
 struct SceneRenderPlan: @unchecked Sendable {
     var scene: CameraScene
     var sources: [UUID: SceneMediaSource]
-    var key: KeySettings
-    var greenScreen: Bool
+    var keying: CameraKeying
     var maskPreview: Bool
 }
 
@@ -133,7 +157,7 @@ final class SceneOutput: @unchecked Sendable {
                     if now.seconds - startedAt > 5 { throw CameraError.message("The selected camera did not start delivering frames.") }; return
                 }
                 guard try freshness.accept(timestamp: frame.1.seconds, now: now.seconds) else { return }
-                let processed = try compositor.cameraImage(frame.0, key: plan.key, enabled: plan.greenScreen, mask: plan.maskPreview)
+                let processed = try compositor.cameraImage(frame.0, keying: plan.keying, mask: plan.maskPreview)
                 mask = processed.1
                 for layer in plan.scene.layers where layer.visible && layer.source == .camera { images[layer.id] = processed.0 }
             }
@@ -183,6 +207,31 @@ final class SceneOutput: @unchecked Sendable {
             }, eventID)
         }
     }
+    /// Averages `count` consecutive raw camera frames (before keying) into one low-noise background picture.
+    /// Runs off the output queue so the scene keeps rendering while the frames are collected.
+    func capturePlate(frames count: Int = PlateAverager.defaultFrames, timeout: Double = 3) async throws -> PlateCapture {
+        let store = cameraFrames
+        return try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(with: Result {
+                    var averager: PlateAverager?
+                    var last = CMTime.invalid
+                    let deadline = ProcessInfo.processInfo.systemUptime + timeout
+                    while (averager?.count ?? 0) < count {
+                        guard ProcessInfo.processInfo.systemUptime < deadline else {
+                            throw CameraError.message("The camera did not deliver enough frames for a background picture. Start a preview with a webcam layer and try again.")
+                        }
+                        if let (buffer, time) = try store.get(), time != last {
+                            last = time
+                            if averager == nil { averager = try PlateAverager(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer)) }
+                            try averager?.add(buffer)
+                        } else { usleep(4_000) }
+                    }
+                    return try averager!.result()
+                })
+            }
+        }
+    }
     private static func package(_ buffer: CVPixelBuffer, time: CMTime, duration: CMTime) throws -> CMSampleBuffer {
         var description: CMVideoFormatDescription?
         let status = CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &description)
@@ -204,4 +253,64 @@ private final class CameraFrameStore {
     func set(_ buffer: CVPixelBuffer, at time: CMTime) { lock.lock(); defer { lock.unlock() }; if enabled { frame = (buffer, time) } }
     func failIfEnabled(_ error: Error) { lock.lock(); defer { lock.unlock() }; if enabled { failure = error } }
     func get() throws -> (CVPixelBuffer, CMTime)? { lock.lock(); defer { lock.unlock() }; if let failure { throw failure }; return frame }
+}
+
+/// A finished background picture: the averaged BGRA image and its lossless PNG encoding for storage.
+struct PlateCapture: @unchecked Sendable {
+    let image: CGImage
+    let png: Data
+    var width: Int { image.width }
+    var height: Int { image.height }
+}
+
+/// Sums BGRA camera frames in floating point and produces their rounded average.
+struct PlateAverager {
+    static let defaultFrames = 8
+    let width: Int
+    let height: Int
+    private var sum: [Float]
+    private var scratch: [Float]
+    private(set) var count = 0
+    init(width: Int, height: Int) throws {
+        guard width > 0, height > 0 else { throw CameraError.message("The camera delivered an empty frame.") }
+        self.width = width; self.height = height
+        sum = Array(repeating: 0, count: width * height * 4); scratch = sum
+    }
+    mutating func add(_ buffer: CVPixelBuffer) throws {
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_32BGRA else { throw CameraError.message("The camera delivered an unsupported frame.") }
+        guard CVPixelBufferGetWidth(buffer) == width, CVPixelBufferGetHeight(buffer) == height else {
+            throw CameraError.message("The camera format changed while taking the background picture. Try again.")
+        }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly); defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer)?.assumingMemoryBound(to: UInt8.self) else { throw CameraError.message("Cannot read the camera frame.") }
+        let rowBytes = CVPixelBufferGetBytesPerRow(buffer), row = width * 4
+        scratch.withUnsafeMutableBufferPointer { scratch in
+            for y in 0..<height { vDSP_vfltu8(base + y * rowBytes, 1, scratch.baseAddress! + y * row, 1, vDSP_Length(row)) }
+        }
+        vDSP.add(sum, scratch, result: &sum)
+        count += 1
+    }
+    func result() throws -> PlateCapture {
+        guard count > 0 else { throw CameraError.message("No camera frames were collected.") }
+        var average = vDSP.divide(sum, Float(count))
+        vDSP.clip(average, to: 0...255, result: &average)
+        var bytes = [UInt8](repeating: 0, count: average.count)
+        vDSP.convertElements(of: average, to: &bytes, rounding: .towardNearestInteger)
+        for i in stride(from: 3, to: bytes.count, by: 4) { bytes[i] = 255 }
+        // Camera frames are sRGB-encoded BGRA; the picture keeps those exact values.
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let image = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.noneSkipFirst.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else {
+            throw CameraError.message("Cannot create the background picture.")
+        }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else {
+            throw CameraError.message("Cannot encode the background picture.")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { throw CameraError.message("Cannot encode the background picture.") }
+        return PlateCapture(image: image, png: data as Data)
+    }
 }

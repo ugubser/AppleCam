@@ -21,6 +21,7 @@ struct SceneCanvas: View {
             .simultaneousGesture(SpatialTapGesture().onEnded { tap in
                 if model.sampling { model.sample(x: tap.location.x / geometry.size.width, y: tap.location.y / geometry.size.height) }
             })
+            .overlay { PlateCountdownOverlay(model: model).allowsHitTesting(false) }
             .overlay(alignment: .top) {
                 if model.sampling {
                     Label("Click the green screen to sample its colour", systemImage: "eyedropper")

@@ -2,6 +2,7 @@
 import AppleCamCore
 #endif
 import AppKit
+import ImageIO
 import ScreenCaptureKit
 
 struct ScenePreparationSuperseded: Error {}
@@ -98,17 +99,17 @@ struct MissingSceneSource: Error {
         cache[layer.id] = Cached(descriptor: layer.source, fps: fps, source: source)
         return source
     }
-    func apply(scene: CameraScene, key: KeySettings, greenScreen: Bool, mask: Bool,
+    func apply(scene: CameraScene, keying: CameraKeying, mask: Bool,
                output configuration: CaptureConfiguration, cameraMode: FrameProducer.Mode, capture: CaptureConfiguration,
                publish: Bool, mayCommit: () -> Bool = { true }) async throws {
-        guard scene.isValid, key.isValid, configuration.isValid, !scene.needsCamera || capture.isValid else {
+        guard scene.isValid, keying.isValid, configuration.isValid, !scene.needsCamera || capture.isValid else {
             throw CameraError.message("The scene, calibration or output format is invalid. Review its settings before starting.")
         }
         if canUpdateInPlace(scene, fps: configuration.fps) {
             var next: [UUID: SceneMediaSource] = [:]
             for layer in scene.layers where layer.visible && layer.source != .camera { next[layer.id] = cache[layer.id]?.source }
             guard mayCommit() else { throw ScenePreparationSuperseded() }
-            await output.update(SceneRenderPlan(scene: scene, sources: next, key: key, greenScreen: greenScreen, maskPreview: mask))
+            await output.update(SceneRenderPlan(scene: scene, sources: next, keying: keying, maskPreview: mask))
             await retire(replacedBy: next, scene: scene)
             return
         }
@@ -131,7 +132,7 @@ struct MissingSceneSource: Error {
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
             guard mayCommit() else { throw ScenePreparationSuperseded() }
-            let plan = SceneRenderPlan(scene: scene, sources: next, key: key, greenScreen: greenScreen, maskPreview: mask)
+            let plan = SceneRenderPlan(scene: scene, sources: next, keying: keying, maskPreview: mask)
             if running { await output.update(plan) }
             else { try await output.start(plan: plan, output: configuration, cameraMode: cameraMode, capture: capture, publish: publish, eventID: eventID); running = true }
             await retire(replacedBy: next, scene: scene)
@@ -166,6 +167,18 @@ struct MissingSceneSource: Error {
         for (id, source) in previous {
             await source.deactivate(); if cache[id]?.source !== source { (source as? BrowserSceneSource)?.close() }
         }
+    }
+    private var plate: LoadedPlate?
+    /// Decodes a saved background picture once; later scene updates reuse it.
+    func loadPlate(_ saved: BackgroundPlate) throws -> LoadedPlate {
+        if let plate, plate.id == saved.asset.id { return plate }
+        let url = store.mediaURL(saved.asset)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else {
+            throw CameraError.message("The background picture cannot be read. Take a new background picture.")
+        }
+        if let mismatch = saved.mismatch(width: image.width, height: image.height) { throw CameraError.message(mismatch) }
+        let loaded = LoadedPlate(id: saved.asset.id, image: image); plate = loaded; return loaded
     }
     func clip(_ id: UUID) -> ClipSceneSource? { cache[id]?.source as? ClipSceneSource }
     func browser(_ id: UUID) -> BrowserSceneSource? { cache[id]?.source as? BrowserSceneSource }

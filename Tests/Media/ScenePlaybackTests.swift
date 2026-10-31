@@ -85,7 +85,7 @@ final class ScenePlaybackTests: XCTestCase {
         let receiver = Receiver(), output = SceneOutput(transport: receiver)
         var red = CameraScene(name: "Red"); red.canvasRed = 1
         var blue = CameraScene(name: "Blue"); blue.canvasBlue = 1
-        let plan = SceneRenderPlan(scene: red, sources: [:], key: KeySettings(), greenScreen: false, maskPreview: false)
+        let plan = SceneRenderPlan(scene: red, sources: [:], keying: .off, maskPreview: false)
         try await output.start(plan: plan, output: .init(width: 64, height: 32, fps: 30), cameraMode: .pattern, capture: .init(), publish: true)
         try await Task.sleep(nanoseconds: 300_000_000)
         var next = plan; next.scene = blue; await output.update(next)
@@ -113,7 +113,7 @@ final class ScenePlaybackTests: XCTestCase {
             if !delivered { delivered = true; XCTAssertEqual(CVPixelBufferGetWidth(image), 128); XCTAssertEqual(CVPixelBufferGetHeight(image), 64); preview.fulfill() }
         }
         let plan = SceneRenderPlan(scene: CameraScene(name: "Camera", layers: [SceneLayer(name: "Me", source: .camera)]),
-            sources: [:], key: KeySettings(), greenScreen: true, maskPreview: false)
+            sources: [:], keying: .greenScreen(KeySettings()), maskPreview: false)
         try await output.start(plan: plan, output: .init(width: 128, height: 64), cameraMode: .pattern, capture: .init(width: 128, height: 64), publish: false)
         await fulfillment(of: [preview], timeout: 5); await output.stop()
     }
@@ -129,10 +129,10 @@ final class ScenePlaybackTests: XCTestCase {
         let receiver = Receiver(), output = SceneOutput(transport: receiver)
         let runtime = SceneRuntime(store: PreferencesStore(directory: FileManager.default.temporaryDirectory), output: output)
         let first = CameraScene(name: "First"), second = CameraScene(name: "Superseded")
-        try await runtime.apply(scene: first, key: KeySettings(), greenScreen: false, mask: false,
+        try await runtime.apply(scene: first, keying: .off, mask: false,
             output: .init(width: 64, height: 32), cameraMode: .pattern, capture: .init(), publish: true)
         do {
-            try await runtime.apply(scene: second, key: KeySettings(), greenScreen: false, mask: false,
+            try await runtime.apply(scene: second, keying: .off, mask: false,
                 output: .init(width: 64, height: 32), cameraMode: .pattern, capture: .init(), publish: true, mayCommit: { false })
             XCTFail("Superseded preparation must not commit")
         } catch is ScenePreparationSuperseded {} catch { XCTFail("Unexpected error: \(error)") }
@@ -154,7 +154,7 @@ final class ScenePlaybackTests: XCTestCase {
         var settings = SavedPreferences(); settings.scenes[0].layers = [layer]; settings.scenes[1].layers = []
         try store.importMedia(from: movie, asset: asset, settings: settings)
         func apply(_ scene: CameraScene) async throws {
-            try await runtime.apply(scene: scene, key: KeySettings(), greenScreen: false, mask: false,
+            try await runtime.apply(scene: scene, keying: .off, mask: false,
                 output: .init(width: 64, height: 32), cameraMode: .pattern, capture: .init(), publish: false)
         }
         try await apply(settings.scenes[0]); try await Task.sleep(nanoseconds: 300_000_000)
@@ -189,7 +189,7 @@ final class ScenePlaybackTests: XCTestCase {
         let receiver = Receiver(), runtime = SceneRuntime(store: store, output: SceneOutput(transport: receiver))
         var scene = settings.scenes[0]; scene.layers[1].visible = false
         func apply(_ scene: CameraScene) async throws {
-            try await runtime.apply(scene: scene, key: KeySettings(), greenScreen: false, mask: false,
+            try await runtime.apply(scene: scene, keying: .off, mask: false,
                 output: .init(width: 64, height: 32), cameraMode: .pattern, capture: .init(), publish: true)
         }
         XCTAssertFalse(runtime.canUpdateInPlace(scene, fps: 30), "Nothing is running yet")

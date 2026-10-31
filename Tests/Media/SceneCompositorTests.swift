@@ -53,7 +53,7 @@ final class SceneCompositorTests: XCTestCase {
         let input = try GreenScreenProcessor.makeBuffer(width: 32, height: 16)
         compositor.context.render(CIImage(color: .green), to: input, bounds: CGRect(x: 0, y: 0, width: 32, height: 16), colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
         var key = KeySettings(); key.color = SIMD3(0, 1, 0)
-        let (keyed, mask) = try compositor.cameraImage(input, key: key, enabled: true, mask: true)
+        let (keyed, mask) = try compositor.cameraImage(input, keying: .greenScreen(key), mask: true)
         let layer = SceneLayer(name: "Me", source: .camera)
         var scene = CameraScene(name: "Fixture", layers: [layer]); scene.canvasBlue = 1
         let output = try XCTUnwrap(compositor.compose(scene: scene, images: [layer.id: keyed]))
@@ -68,7 +68,7 @@ final class SceneCompositorTests: XCTestCase {
         var key = KeySettings(); key.color = SIMD3(0, 1, 0); key.tolerance = 0.36; key.softness = 0.1; key.protection = 0
         let alpha = ChromaKey.alpha(rgb, settings: key)
         XCTAssertGreaterThan(alpha, 0.2); XCTAssertLessThan(alpha, 0.8)
-        let (keyed, _) = try compositor.cameraImage(input, key: key, enabled: true, mask: false)
+        let (keyed, _) = try compositor.cameraImage(input, keying: .greenScreen(key), mask: false)
         let layer = SceneLayer(name: "Glass fixture", source: .camera)
         var scene = CameraScene(name: "Fixture", layers: [layer]); scene.canvasBlue = 1
         let output = try XCTUnwrap(compositor.compose(scene: scene, images: [layer.id: keyed]))
