@@ -3,64 +3,72 @@ import AppleCamCore
 #endif
 import SwiftUI
 import AVFoundation
+import Observation
 import UniformTypeIdentifiers
 import ScreenCaptureKit
 
-@MainActor final class CameraModel: ObservableObject {
-    @Published var status = "Configure your four scenes, then start a local preview or send to AppleCam."
-    @Published var running = false
-    @Published var busy = false
-    @Published var publishing = false
-    @Published var image: CGImage?
-    @Published var captureFPS: Double = 0
-    @Published var previewFPS: Double = 0
-    @Published var selection = "pattern" { didSet { switchProfile(from: oldValue) } }
-    @Published var cameras: [AVCaptureDevice] = []
-    @Published var captureConfiguration = CaptureConfiguration() { didSet { savePreferences() } }
-    @Published var outputConfiguration = CaptureConfiguration() { didSet { savePreferences() } }
-    @Published var availableConfigurations: [CaptureConfiguration] = []
-    @Published var capabilities: [CameraCapability] = []
-    @Published var controlsExpanded = true { didSet { savePreferences() } }
-    @Published var scenes = CameraScene.defaults() { didSet { savePreferences(); requestLiveUpdate() } }
-    @Published private(set) var selectedScene = 0
-    @Published var selectedLayerID: UUID?
-    @Published var sceneThumbnails: [UUID: CGImage] = [:]
-    @Published var useGreenScreen = false {
+/// Observation tracks each property separately, so a new preview frame only redraws views that read `image`.
+@MainActor @Observable final class CameraModel {
+    var status = "Configure your four scenes, then start a local preview or send to AppleCam."
+    var running = false
+    var busy = false
+    var publishing = false
+    var image: CGImage?
+    var captureFPS: Double = 0
+    var previewFPS: Double = 0
+    var selection = "pattern" { didSet { switchProfile(from: oldValue) } }
+    var cameras: [AVCaptureDevice] = []
+    var captureConfiguration = CaptureConfiguration() { didSet { savePreferences() } }
+    var outputConfiguration = CaptureConfiguration() { didSet { savePreferences() } }
+    var availableConfigurations: [CaptureConfiguration] = []
+    var capabilities: [CameraCapability] = []
+    var scenes = CameraScene.defaults() { didSet { savePreferences(); requestLiveUpdate() } }
+    private(set) var selectedScene = 0
+    var selectedLayerID: UUID?
+    var sceneThumbnails: [UUID: CGImage] = [:]
+    var useGreenScreen = false {
         didSet {
             if !useGreenScreen { previewMode = .composite }
             sampling = false; savePreferences(); requestLiveUpdate()
         }
     }
-    @Published var previewMode = KeyPreview.composite { didSet { savePreferences(); requestLiveUpdate() } }
-    @Published var key = KeySettings() { didSet { savePreferences(); requestLiveUpdate() } }
-    @Published var sampling = false
-    @Published var samplePending = false
-    @Published var settingsMessage = "Settings save automatically."
-    @Published var settingsError = false
-    @Published var scenePreparing = false
+    var previewMode = KeyPreview.composite { didSet { savePreferences(); requestLiveUpdate() } }
+    var key = KeySettings() { didSet { savePreferences(); requestLiveUpdate() } }
+    var sampling = false
+    var samplePending = false
+    var settingsMessage = "Settings save automatically."
+    var settingsError = false
+    var scenePreparing = false
+    /// Changes when clip or browser runtime state changes; read by views that show that state.
+    private(set) var sourceRevision = 0
     private(set) var restorationFailed = false
     let extensionManager = ExtensionManager()
-    private let preferencesStore: PreferencesStore
-    private var preferences = SavedPreferences()
-    private let runtime: SceneRuntime
-    private let picker = CaptureSelection()
-    private var restoring = true
-    private var savedCameraName = "Saved camera"
-    private var appendSample = false
-    private var requestID = 0
-    private var revision = 0
-    private var sceneTask: Task<Void, Never>?
-    private var cleanupTask: Task<Void, Never>?
-    private var requestedPublish = false
+    @ObservationIgnored private let preferencesStore: PreferencesStore
+    @ObservationIgnored private var preferences = SavedPreferences()
+    @ObservationIgnored private let runtime: SceneRuntime
+    @ObservationIgnored private let picker = CaptureSelection()
+    @ObservationIgnored private var restoring = true
+    @ObservationIgnored private var savedCameraName = "Saved camera"
+    @ObservationIgnored private var appendSample = false
+    @ObservationIgnored private var requestID = 0
+    @ObservationIgnored private var revision = 0
+    @ObservationIgnored private var sceneTask: Task<Void, Never>?
+    @ObservationIgnored private var cleanupTask: Task<Void, Never>?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var requestedPublish = false
     private struct PreviewFrame {
         let image: CGImage
         let picture: CGImage
         let scene: UUID
         let event: UUID
     }
-    private let previewMailbox = LatestFrameMailbox<PreviewFrame>()
-    private var previewRate = FrameRateCounter()
-    private var rateTimer: Timer?
+    @ObservationIgnored private let previewMailbox = LatestFrameMailbox<PreviewFrame>()
+    @ObservationIgnored private var previewRate = FrameRateCounter()
+    @ObservationIgnored private var rateTimer: Timer?
+    @ObservationIgnored private var thumbnailTimes: [UUID: Double] = [:]
+    /// Continuous edits (dragging, sliders, typing) are coalesced into one write after this pause.
+    static let saveDelay: UInt64 = 400_000_000
+    static let thumbnailInterval = 0.5
     var activeScene: CameraScene { scenes[selectedScene] }
     var selectedLayer: SceneLayer? { activeScene.layers.first { $0.id == selectedLayerID } }
     var isMaskPreview: Bool { previewMode == .mask && useGreenScreen && activeScene.needsCamera }
@@ -77,8 +85,13 @@ import ScreenCaptureKit
     var ratesForResolution: [CaptureConfiguration] {
         availableConfigurations.filter { $0.width == captureConfiguration.width && $0.height == captureConfiguration.height }
     }
+    /// Start/stop controls are locked while a start or stop is in progress.
+    var canStartPreview: Bool { !busy && !(scenePreparing && !running) && !(running && !publishing) }
+    var canSend: Bool { !busy && !(scenePreparing && !running) && !(running && publishing) }
+    var canStop: Bool { running || busy }
     init(preferencesStore: PreferencesStore = PreferencesStore()) {
         self.preferencesStore = preferencesStore; runtime = SceneRuntime(store: preferencesStore)
+        runtime.onSourceStateChange = { [weak self] in self?.sourceRevision += 1 }
         runtime.output.onPublishing = { [weak self] enabled, event in
             Task { @MainActor in guard let self, event == self.runtime.eventID else { return }; self.publishing = enabled }
         }
@@ -105,7 +118,7 @@ import ScreenCaptureKit
             guard let ticket = mailbox.offer(PreviewFrame(image: image, picture: picture, scene: sceneID, event: event)) else { return }
             Task { @MainActor in
                 guard let self, let newest = mailbox.take(ticket: ticket), newest.event == self.runtime.eventID, self.running || self.busy else { return }
-                self.sceneThumbnails[newest.scene] = newest.picture
+                self.updateThumbnail(newest.picture, scene: newest.scene)
                 guard newest.scene == self.activeScene.id else { return }
                 self.image = newest.image; self.previewRate.record()
             }
@@ -128,13 +141,18 @@ import ScreenCaptureKit
         selectedLayerID = activeScene.layers.first?.id
     }
     deinit { NotificationCenter.default.removeObserver(self) }
-    @objc func flushPreferences() { savePreferences() }
+    /// Thumbnails only need to show which scene is which; refreshing them every frame would redraw the scene list at video rate.
+    private func updateThumbnail(_ picture: CGImage, scene: UUID) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard sceneThumbnails[scene] == nil || now - (thumbnailTimes[scene] ?? 0) >= Self.thumbnailInterval else { return }
+        thumbnailTimes[scene] = now; sceneThumbnails[scene] = picture
+    }
     private func currentProfile(cameraID: String) -> CameraProfile {
         var profile = CameraProfile()
         profile.cameraName = cameraID == "pattern" ? "Labelled test pattern (no webcam)" :
             (cameras.first { $0.uniqueID == cameraID }?.localizedName ?? savedCameraName)
         profile.greenScreen = useGreenScreen; profile.preview = previewMode; profile.key = key
-        profile.controlsExpanded = controlsExpanded; profile.capture = captureConfiguration
+        profile.capture = captureConfiguration
         return profile
     }
     private func snapshot() -> SavedPreferences {
@@ -145,7 +163,7 @@ import ScreenCaptureKit
     }
     private func applyProfile(_ profile: CameraProfile) {
         savedCameraName = profile.cameraName; key = profile.key; useGreenScreen = profile.greenScreen
-        previewMode = profile.preview; controlsExpanded = profile.controlsExpanded
+        previewMode = profile.preview
         updateCapabilities()
         captureConfiguration = profile.capture ?? (availableConfigurations.first(where: { $0 == CaptureConfiguration() }) ?? availableConfigurations.first ?? CaptureConfiguration())
     }
@@ -169,12 +187,28 @@ import ScreenCaptureKit
             status = "Saved settings need attention before starting."
         }
     }
+    /// Schedules one coalesced write. `flushPreferences()` writes immediately (quit, stop, tests).
     private func savePreferences() {
+        guard !restoring, !restorationFailed else { return }
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.saveDelay)
+            guard !Task.isCancelled else { return }
+            self?.writePreferences()
+        }
+    }
+    @objc func flushPreferences() {
+        guard saveTask != nil else { return }
+        writePreferences()
+    }
+    private func writePreferences() {
+        saveTask?.cancel(); saveTask = nil
         guard !restoring, !restorationFailed else { return }
         do { let next = snapshot(); try preferencesStore.save(next, deferCleanup: running || busy); preferences = next; settingsError = false; settingsMessage = "Settings saved automatically." }
         catch { settingsError = true; settingsMessage = "Settings could not be saved: \(error.localizedDescription)" }
     }
     func saveCurrentPreferences() {
+        saveTask?.cancel(); saveTask = nil
         do {
             let next = snapshot(); try preferencesStore.save(next); preferences = next
             restorationFailed = false; settingsError = false; settingsMessage = "Settings saved automatically."
@@ -183,6 +217,19 @@ import ScreenCaptureKit
     func selectResolution(_ resolution: String) {
         guard !running, !busy, let option = availableConfigurations.first(where: { $0.resolution == resolution && $0.fps == captureConfiguration.fps }) ?? availableConfigurations.first(where: { $0.resolution == resolution }) else { return }
         captureConfiguration = option
+    }
+    /// Applies a typed capture frame rate. Returns false (leaving the format unchanged) for an invalid value.
+    @discardableResult func setCaptureFPS(_ fps: Double) -> Bool {
+        var next = captureConfiguration; next.fps = fps
+        guard !running, !busy, next.isValid else { return false }
+        captureConfiguration = next; return true
+    }
+    /// Applies a typed canvas size or rate. Returns false (leaving the format unchanged) for an invalid value.
+    @discardableResult func setOutput(width: Int? = nil, height: Int? = nil, fps: Double? = nil) -> Bool {
+        var next = outputConfiguration
+        if let width { next.width = width }; if let height { next.height = height }; if let fps { next.fps = fps }
+        guard !running, !busy, next.isValid else { return false }
+        outputConfiguration = next; return true
     }
     private func updateCapabilities() {
         if selection == "pattern" {
@@ -193,7 +240,7 @@ import ScreenCaptureKit
     }
     func refresh() { cameras = FrameProducer.cameras(); updateCapabilities() }
     func selectScene(_ index: Int) {
-        guard scenes.indices.contains(index), !busy else { return }
+        guard scenes.indices.contains(index), !busy, index != selectedScene else { return }
         selectedScene = index; selectedLayerID = activeScene.layers.first?.id; sampling = false
         savePreferences()
         if running || scenePreparing { requestLiveUpdate() }
@@ -206,29 +253,38 @@ import ScreenCaptureKit
             }
         }
     }
-    func renameScene(_ name: String) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        scenes[selectedScene].name = name
+    /// Returns false for a blank name; the scene keeps its previous name.
+    @discardableResult func renameScene(_ name: String) -> Bool {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if scenes[selectedScene].name != trimmed { scenes[selectedScene].name = trimmed }
+        return true
     }
-    func updateLayer(_ id: UUID, _ change: (inout SceneLayer) -> Void) {
-        guard let index = activeScene.layers.firstIndex(where: { $0.id == id }) else { return }
-        var layer = activeScene.layers[index]; change(&layer)
-        guard !layer.name.isEmpty, layer.source.isValid, layer.placement.isValid,
-              !activeScene.layers[index].locked || layer.placement == activeScene.layers[index].placement else { return }
-        scenes[selectedScene].layers[index] = layer
+    /// Applies a change to one layer of the active scene. Invalid results and placement changes to a locked layer
+    /// are rejected as a whole, leaving the layer unchanged; the return value tells the editor which happened.
+    @discardableResult func updateLayer(_ id: UUID, _ change: (inout SceneLayer) -> Void) -> Bool {
+        guard let index = activeScene.layers.firstIndex(where: { $0.id == id }) else { return false }
+        let current = activeScene.layers[index]
+        var layer = current; change(&layer)
+        guard !layer.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, layer.source.isValid, layer.placement.isValid,
+              !current.locked || layer.placement == current.placement else { return false }
+        if layer != current { scenes[selectedScene].layers[index] = layer }
+        return true
+    }
+    func setCanvasColor(red: Double, green: Double, blue: Double) {
+        guard [red, green, blue].allSatisfy({ $0.isFinite && (0...1).contains($0) }) else { return }
+        var scene = activeScene; scene.canvasRed = red; scene.canvasGreen = green; scene.canvasBlue = blue
+        if scene != activeScene { scenes[selectedScene] = scene }
     }
     func moveLayer(_ id: UUID, to index: Int) { var next = activeScene; if next.move(id, to: index) { scenes[selectedScene] = next } }
     func deleteLayer(_ id: UUID) {
         guard let layer = activeScene.layers.first(where: { $0.id == id }), !layer.locked else { return }
         scenes[selectedScene].layers.removeAll { $0.id == id }; selectedLayerID = activeScene.layers.first?.id
-        if !running && !busy { Task { await runtime.prune(scenes: scenes); preferencesStore.cleanupUnusedMedia() } }
+        if !running && !busy { Task { await runtime.prune(scenes: scenes); preferencesStore.cleanupUnusedMedia(); sourceRevision += 1 } }
     }
-    func addCameraLayer() {
-        let layer = SceneLayer(name: "Webcam", source: .camera)
-        scenes[selectedScene].layers.insert(layer, at: 0); selectedLayerID = layer.id
-    }
-    func addBrowserLayer() {
-        let layer = SceneLayer(name: "Browser", source: .browser(BrowserSettings()))
+    func addCameraLayer() { insertLayer(SceneLayer(name: "Webcam", source: .camera)) }
+    func addBrowserLayer() { insertLayer(SceneLayer(name: "Browser", source: .browser(BrowserSettings()))) }
+    private func insertLayer(_ layer: SceneLayer) {
         scenes[selectedScene].layers.insert(layer, at: 0); selectedLayerID = layer.id
     }
     func addCaptureLayer(display: Bool) {
@@ -285,6 +341,7 @@ import ScreenCaptureKit
             next.scenes[scene].layers.insert(layer, at: 0)
         }
         try preferencesStore.importMedia(from: url, asset: asset, settings: next, deferCleanup: running || busy)
+        saveTask?.cancel(); saveTask = nil
         preferences = next; restoring = true; scenes = next.scenes; restoring = false
         if scene == selectedScene { selectedLayerID = layerID }; settingsError = false; settingsMessage = "Media imported and settings saved."
         requestLiveUpdate()
@@ -304,16 +361,16 @@ import ScreenCaptureKit
     }
     func showBrowser(_ id: UUID) { runtime.browser(id)?.show() }
     func reloadBrowser(_ id: UUID) { runtime.browser(id)?.reload() }
-    func browserAvailable(_ id: UUID) -> Bool { runtime.browser(id) != nil }
-    func browserCanGoBack(_ id: UUID) -> Bool { runtime.browser(id)?.webView.canGoBack ?? false }
-    func browserCanGoForward(_ id: UUID) -> Bool { runtime.browser(id)?.webView.canGoForward ?? false }
+    func browserAvailable(_ id: UUID) -> Bool { _ = sourceRevision; return runtime.browser(id) != nil }
+    func browserCanGoBack(_ id: UUID) -> Bool { _ = sourceRevision; return runtime.browser(id)?.webView.canGoBack ?? false }
+    func browserCanGoForward(_ id: UUID) -> Bool { _ = sourceRevision; return runtime.browser(id)?.webView.canGoForward ?? false }
     func navigateBrowser(_ id: UUID, forward: Bool) {
         guard let browser = runtime.browser(id) else { return }
         if forward { browser.webView.goForward() } else { browser.webView.goBack() }
     }
-    func toggleClip(_ id: UUID) { runtime.clip(id)?.togglePause(); objectWillChange.send() }
+    func toggleClip(_ id: UUID) { runtime.clip(id)?.togglePause(); sourceRevision += 1 }
     func restartClip(_ id: UUID) { runtime.clip(id)?.restart() }
-    func clipPaused(_ id: UUID) -> Bool { runtime.clip(id)?.isPaused ?? false }
+    func clipPaused(_ id: UUID) -> Bool { _ = sourceRevision; return runtime.clip(id)?.isPaused ?? false }
     private func requestLiveUpdate() {
         guard !restoring, running || busy || scenePreparing else { return }; revision += 1
         launchSceneWorker()
@@ -323,14 +380,17 @@ import ScreenCaptureKit
         let request = requestID
         sceneTask = Task {
             guard requestID == request, !Task.isCancelled else { return }
-            scenePreparing = true
             defer { if requestID == request { sceneTask = nil; scenePreparing = false } }
             var applied = -1
             while applied != revision && !Task.isCancelled {
                 applied = revision
                 do {
                     let target = activeScene
-                    let missing = try await runtime.missingSource(in: target)
+                    // Placement, order and calibration edits swap the render plan between frames; only new or
+                    // changed sources need the slower identity checks and the visible "Preparing…" state.
+                    let inPlace = runtime.canUpdateInPlace(target, fps: outputConfiguration.fps)
+                    if !inPlace { scenePreparing = true }
+                    let missing = inPlace ? nil : try await runtime.missingSource(in: target)
                     guard applied == revision else { continue }
                     if let missing {
                         await runtime.stop(); running = false
@@ -350,7 +410,7 @@ import ScreenCaptureKit
                     try Task.checkCancellation()
                     guard requestID == request else { return }
                     running = true; busy = false
-                    await runtime.prune(scenes: scenes); preferencesStore.cleanupUnusedMedia()
+                    if !inPlace { await runtime.prune(scenes: scenes); preferencesStore.cleanupUnusedMedia(); sourceRevision += 1 }
                 } catch is CancellationError { return }
                 catch is ScenePreparationSuperseded { continue }
                 catch {
@@ -412,7 +472,7 @@ import ScreenCaptureKit
     }
     private func stopRateTimer() { rateTimer?.invalidate(); rateTimer = nil; captureFPS = 0; previewFPS = 0 }
     func stop() {
-        savePreferences(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
+        flushPreferences(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
         running = false; busy = true; scenePreparing = false; previewMailbox.invalidate(); image = nil; stopRateTimer()
         let request = requestID
         Task {

@@ -2,11 +2,12 @@
 import AppleCamCore
 #endif
 import Foundation
+import Observation
 import SystemExtensions
 
-final class ExtensionManager: NSObject, ObservableObject, OSSystemExtensionRequestDelegate {
-    @Published var status = "Extension activation has not been checked."
-    @Published var pending = false
+@Observable final class ExtensionManager: NSObject, OSSystemExtensionRequestDelegate {
+    var status = "Extension activation has not been checked."
+    var pending = false
     func activate() {
         guard Bundle.main.bundleURL.deletingLastPathComponent().path == "/Applications" else {
             status = "Use the signed, notarized app in Applications before installing the extension."

@@ -13,6 +13,7 @@ public struct CameraProfile: Codable, Equatable, Sendable {
     public var key = KeySettings()
     public var background: SavedBackground?
     public var backgrounds: [SavedBackground?] = Array(repeating: nil, count: 4)
+    /// No longer shown in the interface (v0.3 uses an inspector). Kept so v0.2 can still read these settings.
     public var controlsExpanded = true
     public var capture: CaptureConfiguration?
     public init() {}
@@ -133,6 +134,8 @@ public final class PreferencesStore {
     private var lastImages = Set<SavedBackground>()
     private var lastMedia = Set<MediaAsset>()
     private var pendingRemoval = Set<MediaAsset>()
+    /// The pre-upgrade backup check reads the file once per store, not on every save.
+    private var legacyBackupChecked = false
     public init(directory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("AppleCam", isDirectory: true)) { self.directory = directory }
     public var settingsURL: URL { directory.appendingPathComponent("preferences.json") }
@@ -151,7 +154,7 @@ public final class PreferencesStore {
         try settings.validate()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Preserve the exact pre-upgrade document before the first schema-3 commit.
-        if FileManager.default.fileExists(atPath: settingsURL.path),
+        if !legacyBackupChecked, FileManager.default.fileExists(atPath: settingsURL.path),
            let data = try? Data(contentsOf: settingsURL),
            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
            let schema = object["version"] as? Int, schema < 3 {
@@ -159,6 +162,7 @@ public final class PreferencesStore {
             if !FileManager.default.fileExists(atPath: backup.path) { try FileManager.default.copyItem(at: settingsURL, to: backup) }
         }
         try JSONEncoder().encode(settings).write(to: settingsURL, options: .atomic)
+        legacyBackupChecked = true
         let old = lastImages; lastImages = settings.imageReferences
         for image in old where !lastImages.contains(where: { $0.id == image.id }) {
             pendingRemoval.insert(MediaAsset(id: image.id, name: image.name, fileExtension: "image"))

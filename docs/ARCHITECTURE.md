@@ -165,7 +165,7 @@ The UI has four persistent thumbnail buttons outside a DisclosureGroup containin
 
 ## Shared scenes and media layers build 15
 
-The host now uses CameraModel → SceneRuntime → SceneOutput. SceneRuntime manages one source object per layer, prepares complete target scenes, pauses inactive clips, suspends inactive browser media, and releases inactive screen streams. SceneOutput composes on its own bounded serial queue and common host-clock cadence, so camera-free scenes continue independently of camera delivery. Visible camera layers share one FrameProducer capture-only session. Existing diagnostic producer APIs remain available for fixture tests; they are not an automatic runtime substitute.
+The host now uses CameraModel → SceneRuntime → SceneOutput. SceneRuntime manages one source object per layer, prepares complete target scenes, pauses inactive clips, suspends inactive browser media, and releases inactive screen streams. SceneOutput composes on its own bounded serial queue and common host-clock cadence, so camera-free scenes continue independently of camera delivery. Visible camera layers share one FrameProducer capture session. (Build 16 removed the former diagnostic keying/publishing producer APIs.)
 
 SceneCompositor uses a Metal-backed Core Image context in linear sRGB. GreenScreenProcessor now supports premultiplied-alpha foreground output; keying occurs before per-layer transforms. Layers are drawn back to front into an explicit opaque canvas colour. Fit/Fill crop and top-left normalized coordinates are shared with inverse sampling. The local Mask buffer is separate from the composite sent to CMIO. The existing virtual-camera transport/extension contract is unchanged, and scene switches do not reconnect it.
 
@@ -176,3 +176,16 @@ Clips use AVPlayerItemVideoOutput and a muted AVPlayer, looping by seeking at th
 Preferences schema 3 stores exactly four global scenes, selected scene and common output configuration alongside per-camera calibration/capture settings. Versions 1/2 migrate the active camera's slots into four scenes, preserve out-of-slot active images and retain other camera assets as hidden layers. The old preferences document is backed up before the first schema-3 write. Managed asset imports copy files transactionally; live asset removal is deferred until old readers detach. Settings never serialize active publication or captured frames.
 
 macOS 15.2 is now the deployment floor because SCContentFilter.includedWindows/includedDisplays identify system-picker results through public APIs. Browser network access is explicitly entitled.
+
+## Inspector layout and editing build 16
+
+The single scrolling window is replaced by the macOS sidebar–content–inspector pattern: `NavigationSplitView` with scenes and layers in the sidebar, the canvas and status bar as the detail, and a full-height `.inspector` with Layer, Green Screen and Output tabs. The UI lives in `AppleCam/UI/`. The window-level minimum is derived from the column minimums; an additional minimum frame on the split view, or an inspector attached inside the detail column with explicit minimum widths, made AppKit abort with an endless constraint-update loop on macOS 27.
+
+`CameraModel` and `ExtensionManager` use the Observation framework. Each view tracks only the properties it reads, so a preview frame redraws the preview image instead of the whole window; scene thumbnails refresh at most twice a second. Runtime state that is not itself observable (clip pause, browser history via KVO) bumps `sourceRevision`.
+
+Editable fields keep a local draft (`DraftBuffer`) and apply it on Return or focus loss. Only text the user changed is applied; an untouched, focused field follows outside changes such as canvas drags. Model setters (`updateLayer`, `renameScene`, `setOutput`, `setCaptureFPS`) validate and return whether a value was accepted; rejected values revert. Canvas gestures measure translation in a named canvas coordinate space and use gesture state, so a moving layer frame cannot feed back into its own drag.
+
+Settings writes are coalesced: continuous edits schedule one write after a 400 ms pause, and stop, quit and media import write immediately. `PreferencesStore` checks for a pre-scenes backup once per store instead of re-reading the file on every save. When every visible non-webcam source is already active with the same descriptor and canvas rate, `SceneRuntime` swaps the render plan between frames without screen-content identity checks, first-frame waits or the "Preparing" state; new or changed sources still take the full path.
+
+`FrameProducer` is now only a capture source (webcam or diagnostic pattern into private BGRA buffers). Its build-14 keying, preview and publishing pipeline was unused by the scene runtime and has been removed with its tests; keying, composition and publication are covered through `SceneOutput`.
+

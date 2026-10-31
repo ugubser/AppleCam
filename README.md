@@ -8,9 +8,9 @@ Built with Swift, SwiftUI, AVFoundation, Core Image, Metal and Apple's Core Medi
 
 ## Current status
 
-Version **0.2.0, build 15** adds scenes and media layers to the development prototype. The source, unsigned verification build and locally development-signed build are updated; this scene build has not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
+Version **0.3.0, build 16** rearranges the window so the live output is always visible while editing, and fixes editing, flicker and stability bugs found in build 15. The source, unsigned verification build and locally development-signed build are updated; build 16 has not been installed, distributed, notarized or qualified in a real meeting. Build 14 remains the previously signed distribution. Signed and notarized builds have been produced, and the owner has confirmed Logitech BRIO output in Google Meet through Chrome. Microsoft Teams web and sustained conference-call performance remain acceptance targets, not completed qualifications.
 
-The scene validation run passed **115 automated tests**. A separate native AppKit integration check captured generated video through public WebKit snapshots, including an obscured rendering window, and verified silence, pause and resume. Local synthetic scene output was observed at about 30 fps in the app. These checks do not qualify live YouTube, screen permission UX, arbitrary cameras, or sustained Teams calls. Historical capture measurements and their limits remain in [the validation plan](docs/VALIDATION_PLAN.md).
+The build-16 validation run passed **123 automated tests**; build 15's scene validation passed 115. A separate native AppKit integration check captured generated video through public WebKit snapshots, including an obscured rendering window, and verified silence, pause and resume. Local synthetic scene output was observed at about 30 fps in the app. These checks do not qualify live YouTube, screen permission UX, arbitrary cameras, or sustained Teams calls. Historical capture measurements and their limits remain in [the validation plan](docs/VALIDATION_PLAN.md).
 
 ## Release tags
 
@@ -18,6 +18,17 @@ Releases use annotated Git tags named `vMAJOR.MINOR` (for example, `v0.2`); patc
 
 - `v0.1`: build 14, the previous release with per-camera profiles, background shortcuts and approved branding.
 - `v0.2`: build 15, shared scenes and editable media layers. Runtime acceptance limits are recorded above and in the validation plan; a source tag does not imply a notarized distribution.
+- Version 0.3.0 (build 16) is committed but not yet tagged.
+
+## Window layout
+
+The window follows the macOS sidebar–content–inspector pattern, so the live canvas never scrolls out of view:
+
+- **Sidebar** (left): the four scene buttons (⌘1–⌘4) and the selected scene's layers, front at the top. Drag rows to reorder, use the eye and lock buttons, right-click for more, press Delete to remove, and use **Add Layer** at the bottom.
+- **Canvas** (centre): the live preview, with drag-to-move and a corner handle to resize the selected layer. The status bar shows state (Stopped / Preview / Sending), messages and frame rates. Toolbar: **Preview** (⌘R), **Send to AppleCam** (⇧⌘R), **Stop** (⌘.) and the inspector toggle.
+- **Inspector** (right), with three tabs: **Layer** (scene name, canvas colour, and the selected layer's name, placement, Fit/Fill and source controls), **Green Screen** (samples, Picture/Mask preview and keying sliders), and **Output** (camera, capture format, canvas output format and camera extension installation).
+
+Text and number fields apply on Return or when you leave the field, and Escape restores the current value. A value that isn't accepted beeps and reverts; blank names are rejected.
 
 ## Features
 
@@ -85,23 +96,25 @@ The project contains public bundle and team identifiers, but no signing credenti
 
 ## Using the camera
 
-1. Put the signed, notarized app in **Applications**, open it, and use **Install camera extension** for the initial setup. Approve the extension in macOS settings if prompted.
-2. Select your camera and a supported capture format. Set the common canvas output size/rate (initially 1920 × 1080 at 30 fps). Scene changes keep that output format and transport connection.
-3. Select one of the four scene buttons. Use **Add layer**, select a source, and drag layer rows to arrange front-to-back order. Select a layer to name, position or resize it. Lock protects placement and ordering; visibility remains independently editable.
-4. Start **Preview locally**. For a webcam green screen, enable **Green screen**, select its layer, and use **Replace samples** on the backdrop. Sampling maps through the layer's placement/crop to the original camera buffer. Mask preview remains local only.
+1. Put the signed, notarized app in **Applications**, open it, and use **Install Camera Extension** in the **Output** inspector for the initial setup. Approve the extension in macOS settings if prompted.
+2. In the **Output** inspector, select your camera and a supported capture format. Set the common canvas output size/rate (initially 1920 × 1080 at 30 fps). Scene changes keep that output format and transport connection.
+3. Select one of the four scene buttons in the sidebar. Use **Add Layer**, select a source, and drag layer rows to arrange front-to-back order. Select a layer to name, position or resize it in the **Layer** inspector or directly on the canvas. Lock protects placement and ordering; visibility remains independently editable.
+4. Click **Preview**. For a webcam green screen, open the **Green Screen** inspector, enable **Green screen**, select the webcam layer, and use **Replace Samples** on the backdrop. Sampling maps through the layer's placement/crop to the original camera buffer. Mask preview remains local only.
 5. Add images, looping clips, browser pages, windows or displays as needed. Local media is copied into private app storage, so moving the original does not break the scene. Clips stay silent and resume when returning to their scene.
-6. For browser pages, set the URL and viewport and use **Interact with page** for playback/navigation. The source rendering window stays ordered while active; do not minimize it. Page playback/embedding restrictions and protected video remain website/OS constraints. AppleCam does not download YouTube streams or bypass player restrictions. Browser sessions are ephemeral and are not shared with Safari/Chrome. Web Audio is disabled in silent browser layers.
+6. For browser pages, set the address (press Return to load) and viewport and use **Interact with Page** for playback/navigation. The source rendering window stays ordered while active; do not minimize it. Page playback/embedding restrictions and protected video remain website/OS constraints. AppleCam does not download YouTube streams or bypass player restrictions. Browser sessions are ephemeral and are not shared with Safari/Chrome. Web Audio is disabled in silent browser layers.
 7. Click **Send to AppleCam**, select **AppleCam** in the meeting camera picker, and confirm its preview before joining a call. Keep the usual microphone selected; no media audio is sent.
 
 Edits affect the selected scene live. Switching scene buttons selects a complete composition without restarting the virtual-camera transport. Hidden/inactive sources are paused/stopped and retained for returning to the scene. If a window has closed or its application restarted, choose it again or use **Not right now** to hide just that layer and continue. Cancelling the picker leaves output stopped; no replacement is selected. A visible source failure stops publication; receiving clients can retain their last picture.
 
-**Preview locally** ends publication while keeping local composition running; **Stop** ends capture and publication. Camera and canvas format changes require Stop. Shared scenes persist across webcam changes; each camera retains its own key calibration, green-screen preference and capture format. A scene with no visible webcam does not request camera access. No camera, window or display frames are recorded by AppleCam.
+**Preview** ends publication while keeping local composition running; **Stop** ends capture and publication. Camera and canvas format changes require Stop. Shared scenes persist across webcam changes; each camera retains its own key calibration, green-screen preference and capture format. A scene with no visible webcam does not request camera access. No camera, window or display frames are recorded by AppleCam.
 
 The initial scene release uses immediate cuts and one selected display per screen layer. It does not include audio routing, transitions, video conversion, extra codec libraries, persistent browser accounts or recording.
 
-Build 12 changes the camera extension: after replacing the app in Applications, click **Install camera extension** to update it. Follow any approval or restart requirement reported by macOS. Select **Send to AppleCam** and reselect AppleCam in the meeting preview to verify delivery. Updating the app alone does not replace an already activated extension.
+Build 12 changes the camera extension: after replacing the app in Applications, click **Install Camera Extension** to update it. Follow any approval or restart requirement reported by macOS. Select **Send to AppleCam** and reselect AppleCam in the meeting preview to verify delivery. Updating the app alone does not replace an already activated extension.
 
 The selected camera format applies to camera capture and keying; the common canvas format determines the composed frames sent into the extension. A meeting client can negotiate a different output resolution/rate; the extension preserves the whole picture with aspect-fit letterboxing and reduces cadence only when explicitly requested. It does not invent extra frames or change the physical camera setting. The extension advertises common resolutions plus attached-camera resolutions visible when its streams are created. A newly attached camera with an unusual resolution may require the extension to be recreated before that resolution can be published; local capture is independent of this catalogue. Unsupported publication formats report an error instead of changing the selection. Live format negotiation with the updated extension and browser remains an owner acceptance check.
+
+Known issue (since build 15, macOS 27): in a browser layer whose rendering window is covered, a video you paused inside the page can start playing again after switching away from the scene and back. WebKit restarts it once on reactivation, and AppleCam then treats the automatic pause that follows as an interruption. The native browser harness reports this intermittently as "An explicit user pause was not preserved".
 
 Apple effects are controlled by macOS and are not blocked by AppleCam. Effects applied separately in a meeting app may further change the finished picture.
 

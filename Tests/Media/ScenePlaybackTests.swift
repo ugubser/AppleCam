@@ -166,4 +166,46 @@ final class ScenePlaybackTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)
         XCTAssertGreaterThan(clip.player.currentTime().seconds, position + 0.05); await runtime.stop()
     }
+    @MainActor func testPlacementAndVisibilityEditsUpdateInPlaceWithoutReopeningSources() async throws {
+        final class Receiver: FrameTransport {
+            private let lock = NSLock()
+            private var starts = 0
+            func start(configuration: CaptureConfiguration) throws { lock.withLock { starts += 1 } }
+            func send(_ sample: CMSampleBuffer) throws {}
+            func stop() {}
+            func count() -> Int { lock.withLock { starts } }
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("artifacts/fixtures/AppleCam-sample-background.png")
+        let store = PreferencesStore(directory: directory)
+        let first = MediaAsset(name: "One", fileExtension: "image"), second = MediaAsset(name: "Two", fileExtension: "image")
+        var settings = SavedPreferences()
+        settings.scenes[0].layers = [SceneLayer(name: "One", source: .image(first))]
+        try store.importMedia(from: fixture, asset: first, settings: settings)
+        settings.scenes[0].layers.append(SceneLayer(name: "Two", source: .image(second)))
+        try store.importMedia(from: fixture, asset: second, settings: settings)
+        let receiver = Receiver(), runtime = SceneRuntime(store: store, output: SceneOutput(transport: receiver))
+        var scene = settings.scenes[0]; scene.layers[1].visible = false
+        func apply(_ scene: CameraScene) async throws {
+            try await runtime.apply(scene: scene, key: KeySettings(), greenScreen: false, mask: false,
+                output: .init(width: 64, height: 32), cameraMode: .pattern, capture: .init(), publish: true)
+        }
+        XCTAssertFalse(runtime.canUpdateInPlace(scene, fps: 30), "Nothing is running yet")
+        try await apply(scene)
+        var moved = scene; moved.layers[0].placement.x = 0.25; moved.layers[0].placement.width = 0.5
+        XCTAssertTrue(runtime.canUpdateInPlace(moved, fps: 30))
+        XCTAssertFalse(runtime.canUpdateInPlace(moved, fps: 60), "A new canvas rate needs new sources")
+        try await apply(moved)
+        var hidden = moved; hidden.layers[0].visible = false
+        XCTAssertTrue(runtime.canUpdateInPlace(hidden, fps: 30), "Hiding only retires a source")
+        var shown = moved; shown.layers[1].visible = true
+        XCTAssertFalse(runtime.canUpdateInPlace(shown, fps: 30), "A newly visible source must be opened and checked")
+        try await apply(shown)
+        XCTAssertTrue(runtime.canUpdateInPlace(shown, fps: 30))
+        XCTAssertTrue(runtime.running); XCTAssertEqual(receiver.count(), 1, "Edits never restart the virtual-camera transport")
+        await runtime.stop()
+        XCTAssertFalse(runtime.canUpdateInPlace(shown, fps: 30))
+    }
 }

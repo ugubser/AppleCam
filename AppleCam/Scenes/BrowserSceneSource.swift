@@ -19,6 +19,9 @@ import WebKit
     private nonisolated let errors = BrowserFailure()
     private var active = false
     private var mediaSuspended = false
+    private var historyObservations: [NSKeyValueObservation] = []
+    /// Called on the main actor when back/forward availability changes.
+    var onStateChange: (() -> Void)?
     static let silenceScript = """
     (() => {
       const proto = HTMLMediaElement.prototype;
@@ -57,7 +60,8 @@ import WebKit
         if (!(media instanceof HTMLMediaElement) || !layerActive) return;
         if (document.hidden && !media.ended && intendedPlayback.has(media) && !occlusionResumeAttempted.has(media)) {
           occlusionResumeAttempted.add(media);
-          setTimeout(() => { if(layerActive)media.play().catch(() => {}) }, 50);
+          // Re-check intent: an explicit pause() during this delay must win over the occlusion restart.
+          setTimeout(() => { if (layerActive && intendedPlayback.has(media)) media.play().catch(() => {}) }, 50);
         } else intendedPlayback.delete(media);
       }, true);
       document.addEventListener('visibilitychange', () => {
@@ -103,6 +107,9 @@ import WebKit
         window.setFrameOrigin(CGPoint(x: 40, y: 60)); window.orderBack(nil)
         super.init()
         window.delegate = self; webView.navigationDelegate = self; webView.uiDelegate = self
+        historyObservations = [\WKWebView.canGoBack, \WKWebView.canGoForward].map { path in
+            webView.observe(path) { [weak self] _, _ in Task { @MainActor in self?.onStateChange?() } }
+        }
         webView.load(URLRequest(url: url))
     }
     func activate() async throws {
@@ -142,7 +149,10 @@ import WebKit
     }
     func show() { if active { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) } }
     func reload() { errors.set(nil); webView.reload() }
-    func close() { webView.stopLoading(); window.delegate = nil; window.orderOut(nil); window.close() }
+    func close() {
+        historyObservations.removeAll(); onStateChange = nil
+        webView.stopLoading(); window.delegate = nil; window.orderOut(nil); window.close()
+    }
     nonisolated func image(at hostTime: CMTime) throws -> CIImage? { try errors.check(); return pixels.image(at: hostTime.seconds) }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderBack(nil); return false }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

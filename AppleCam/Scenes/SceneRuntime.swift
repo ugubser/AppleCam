@@ -26,7 +26,19 @@ struct MissingSceneSource: Error {
     private var monitor: Task<Void, Never>?
     private(set) var running = false
     var pickedFilters: [UUID: SCContentFilter] = [:]
+    /// Called on the main actor when a source's user-visible state (for example browser history) changes.
+    var onSourceStateChange: (() -> Void)?
     init(store: PreferencesStore, output: SceneOutput = SceneOutput()) { self.store = store; self.output = output }
+    /// True when every visible non-webcam layer already has its exact source active, so a change
+    /// (placement, order, calibration, hiding a layer) only swaps the render plan between frames.
+    func canUpdateInPlace(_ scene: CameraScene, fps: Double) -> Bool {
+        guard running else { return false }
+        return scene.layers.allSatisfy { layer in
+            guard layer.visible, layer.source != .camera else { return true }
+            guard let cached = cache[layer.id], cached.descriptor == layer.source, cached.fps == fps else { return false }
+            return active[layer.id] === cached.source
+        }
+    }
     func missingSource(in scene: CameraScene) async throws -> SceneLayer? {
         let captures = scene.layers.filter { layer in
             guard layer.visible else { return false }
@@ -71,7 +83,10 @@ struct MissingSceneSource: Error {
         switch layer.source {
         case .image(let asset): source = try StillSceneSource(url: store.mediaURL(asset))
         case .clip(let asset): source = try await ClipSceneSource(url: store.mediaURL(asset))
-        case .browser(let settings): source = try await BrowserSceneSource(settings: settings, name: layer.name, fps: fps)
+        case .browser(let settings):
+            let browser = try await BrowserSceneSource(settings: settings, name: layer.name, fps: fps)
+            browser.onStateChange = { [weak self] in self?.onSourceStateChange?() }
+            source = browser
         case .window, .display: source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps)
         case .camera: throw CameraError.message("Webcam frames belong to the shared camera session.")
         }
@@ -86,6 +101,14 @@ struct MissingSceneSource: Error {
                publish: Bool, mayCommit: () -> Bool = { true }) async throws {
         guard scene.isValid, key.isValid, configuration.isValid, !scene.needsCamera || capture.isValid else {
             throw CameraError.message("The scene, calibration or output format is invalid. Review its settings before starting.")
+        }
+        if canUpdateInPlace(scene, fps: configuration.fps) {
+            var next: [UUID: SceneMediaSource] = [:]
+            for layer in scene.layers where layer.visible && layer.source != .camera { next[layer.id] = cache[layer.id]?.source }
+            guard mayCommit() else { throw ScenePreparationSuperseded() }
+            await output.update(SceneRenderPlan(scene: scene, sources: next, key: key, greenScreen: greenScreen, maskPreview: mask))
+            await retire(replacedBy: next, scene: scene)
+            return
         }
         var next: [UUID: SceneMediaSource] = [:]
         do {
@@ -109,16 +132,20 @@ struct MissingSceneSource: Error {
             let plan = SceneRenderPlan(scene: scene, sources: next, key: key, greenScreen: greenScreen, maskPreview: mask)
             if running { await output.update(plan) }
             else { try await output.start(plan: plan, output: configuration, cameraMode: cameraMode, capture: capture, publish: publish, eventID: eventID); running = true }
-            let previous = active; active = next; activeScene = scene
-            for (id, source) in previous where next[id] !== source {
-                await source.deactivate()
-                if cache[id]?.source !== source { (source as? BrowserSceneSource)?.close() }
-            }
+            await retire(replacedBy: next, scene: scene)
             startMonitor()
         } catch {
             // Failure never enables a substitute scene. Release everything prepared by this attempt.
             for (id, source) in next where active[id] !== source { await source.deactivate() }
             throw error
+        }
+    }
+    /// Makes `next` the active source set and pauses sources that left the scene. Cached sources stay open for reuse.
+    private func retire(replacedBy next: [UUID: SceneMediaSource], scene: CameraScene) async {
+        let previous = active; active = next; activeScene = scene
+        for (id, source) in previous where next[id] !== source {
+            await source.deactivate()
+            if cache[id]?.source !== source { (source as? BrowserSceneSource)?.close() }
         }
     }
     func prune(scenes: [CameraScene]) async {

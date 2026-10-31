@@ -6,7 +6,7 @@ import Metal
 import ImageIO
 import UniformTypeIdentifiers
 
-/// All use is serialized on FrameProducer.queue. No frame or private image is written to disk.
+/// Each instance is confined to one serial queue (SceneOutput.queue in the app). No frame or private image is written to disk.
 final class GreenScreenProcessor {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
@@ -50,11 +50,13 @@ final class GreenScreenProcessor {
         // Transparent PNG regions are explicitly rejected, never silently replaced.
         context.render(centered, to: background, bounds: CGRect(x: 0, y: 0, width: width, height: height),
                        colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        guard image != nil else { return }
         CVPixelBufferLockBaseAddress(background, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(background, .readOnly) }
         let base = CVPixelBufferGetBaseAddress(background)!.assumingMemoryBound(to: UInt8.self)
+        let rowBytes = CVPixelBufferGetBytesPerRow(background)
         for y in 0..<height {
-            for x in 0..<width where image != nil && base[y * CVPixelBufferGetBytesPerRow(background) + x * 4 + 3] != 255 {
+            for x in 0..<width where base[y * rowBytes + x * 4 + 3] != 255 {
                 throw CameraError.message("This background contains transparency. Choose an opaque PNG or JPEG.")
             }
         }

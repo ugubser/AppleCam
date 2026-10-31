@@ -40,9 +40,17 @@ import UniformTypeIdentifiers
                     guard abs(later - paused) < 0.1 else { throw CameraError.message("Inactive browser playback did not pause.") }
                     try await source.activate(); try await Task.sleep(nanoseconds: 300_000_000)
                     guard try source.image(at: CMClockGetTime(CMClockGetHostTimeClock())) != nil else { throw CameraError.message("Browser capture did not resume.") }
-                    let resumed = try await source.webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
-                    let playing = try await source.webView.evaluateJavaScript("!document.querySelector('video').paused") as? Bool
+                    // While the rendering window is covered, WebKit can briefly pause the video before the page script
+                    // restarts it, so one fixed-time sample can land in that gap. Require resumed playback within 2 s.
+                    var resumed = paused, playing: Bool? = false, waited = 300
+                    while waited <= 2_000 {
+                        resumed = try await source.webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
+                        playing = try await source.webView.evaluateJavaScript("!document.querySelector('video').paused") as? Bool
+                        if playing == true && abs(resumed - paused) > 0.05 { break }
+                        try await Task.sleep(nanoseconds: 100_000_000); waited += 100
+                    }
                     guard playing == true, abs(resumed - paused) > 0.05 else { throw CameraError.message("Browser video playback did not resume.") }
+                    print("Playback resumed within \(waited) ms of reactivation.")
                     _ = try await source.webView.evaluateJavaScript("document.querySelector('video').pause()")
                     let userPaused = try await source.webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
                     await source.deactivate(); try await source.activate()

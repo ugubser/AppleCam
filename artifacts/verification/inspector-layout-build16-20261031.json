@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-31",
+  "build": 16,
+  "version": "0.3.0",
+  "platform": {
+    "macOS": "27.0",
+    "architecture": "arm64",
+    "xcode": "27.2 (27B52)"
+  },
+  "scope": "Sidebar/canvas/inspector layout, draft-based field editing, flicker and constraint-loop fixes, coalesced settings writes, in-place scene updates, FrameProducer reduced to a capture source",
+  "automated_tests": {
+    "passed": 123,
+    "failed": 0,
+    "core": 66,
+    "media": 57,
+    "log": "work/tests.log"
+  },
+  "unsigned_verification": {
+    "passed": true,
+    "checks": ["swift test", "Debug app and embedded camera extension", "embedded bundle layout", "standard and Retina app icon"],
+    "log": "work/build.log"
+  },
+  "development_signing": {
+    "passed": true,
+    "artifact": "build/ScenesSigned/Build/Products/Debug/AppleCam.app",
+    "checks": [
+      "codesign --verify --deep --strict",
+      "expected producer signing requirement",
+      "wrong identifier rejected",
+      "wrong team rejected",
+      "unrelated signed program rejected"
+    ],
+    "log": "work/scenes-signed-build.log",
+    "notarized": false
+  },
+  "native_browser_integration": {
+    "passed": false,
+    "result": "Intermittent: capture, colours, silence, obscured window, inactive pause and resume pass; explicit user-pause preservation fails intermittently on macOS 27 with both build-15 and build-16 sources",
+    "resume_latency_ms": "300-400",
+    "log": "work/browser-layer-native-integration.log"
+  },
+  "ui_smoke": {
+    "passed": true,
+    "source": "Labelled synthetic pattern only",
+    "isolated_preferences": true,
+    "method": "macOS Accessibility and synthesized mouse events against the development-signed build",
+    "checks": [
+      "repeated launch and resizing to minimum/large sizes without constraint-loop abort",
+      "local preview",
+      "typed X, width, layer name and scene name edits; invalid input reverts",
+      "aspect-locked width/height",
+      "mouse drag lands at the expected placement",
+      "corner-handle resize with locked aspect",
+      "saved settings match the inspector",
+      "green-screen toggle, tolerance slider, Mask/Picture preview",
+      "format fields locked while running",
+      "Cmd-1/Cmd-2 live scene switching",
+      "canvas size edit with Tab between fields",
+      "Stop"
+    ],
+    "observed_output": "approximately 30 fps out and 30 fps preview at 1920x1080; synthetic, not a camera benchmark"
+  },
+  "unverified": [
+    "Instrumented flicker measurement",
+    "Real camera green-screen tuning in the new inspector",
+    "Send to AppleCam with the installed extension",
+    "All build-15 acceptance items still open"
+  ],
+  "installed_app_modified": false,
+  "camera_extension_activated": false,
+  "committed": true,
+  "pushed": false
+}

@@ -5,75 +5,42 @@ import AppKit
 import AVFoundation
 import CoreImage
 
-/// Captures, processes and delivers frames on one bounded serial queue.
+/// Captures webcam or diagnostic-pattern frames on one serial queue.
+/// Each frame is copied into a private sRGB BGRA buffer and handed to `onCameraFrame`;
+/// keying, composition and publication belong to `SceneOutput`.
 final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
     enum Mode { case pattern, camera(String) }
     let queue = DispatchQueue(label: "com.vanguardsignals.AppleCam.producer", qos: .userInitiated)
-    var onStatus: ((String, Bool) -> Void)?
-    var onPreview: ((CGImage) -> Void)?
-    var onCaptureRate: ((Double, Int) -> Void)?
-    var onFailure: ((Error) -> Void)?
+    /// Called on `queue` for every captured frame with its host-clock timestamp.
     var onCameraFrame: ((CVPixelBuffer, CMTime) -> Void)?
-    private var captureOnly = false
-    var onSample: ((Result<SIMD3<Float>, Error>) -> Void)?
-    var onState: ((_ publishing: Bool, _ cameraReady: Bool) -> Void)?
-    private var cameraReady = false
-    private var keyer: GreenScreenProcessor?
-    private var keySettings = KeySettings()
-    private var latestRaw: CVPixelBuffer?
-    private var captureRate = FrameRateCounter()
-    private var metricsTimer: DispatchSourceTimer?
-    private let transport: FrameTransport
-    private var previewMode = KeyPreview.composite
-    init(transport: FrameTransport = SinkTransport()) {
-        self.transport = transport
-        super.init()
-    }
-    func setPreviewMode(_ mode: KeyPreview) { queue.async { [self] in previewMode = mode } }
+    /// Called on `queue` once capture has stopped because of an error. No substitute source is started.
+    var onFailure: ((Error) -> Void)?
     private let context = CIContext(options: [.cacheIntermediates: false])
+    private let space = CGColorSpace(name: CGColorSpace.sRGB)!
     private var timer: DispatchSourceTimer?
     private var watchdog: DispatchSourceTimer?
     private var session: AVCaptureSession?
     private var camera: AVCaptureDevice?
     private var observations: [NSObjectProtocol] = []
     private var pool: CVPixelBufferPool?
-    private var videoDescription: CMVideoFormatDescription?
     private var pattern: CIImage?
     private var frame = 0
     private var running = false
-    private var publish = false
     private var lastFrame: Double = 0
     private var configuration = CaptureConfiguration()
-    private var frameDuration = CaptureConfiguration().duration
 
     static func cameras() -> [AVCaptureDevice] {
         AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified)
             .devices.filter { $0.uniqueID != CameraContract.deviceID.uuidString && $0.localizedName != CameraContract.name }
     }
-    func start(mode: Mode, publish: Bool, background: CGImage? = nil, settings: KeySettings = KeySettings(), configuration: CaptureConfiguration = CaptureConfiguration(), captureOnly: Bool = false) {
+    func start(mode: Mode, configuration: CaptureConfiguration = CaptureConfiguration()) {
         queue.async { [self] in
             stopOnQueue()
             do {
                 guard configuration.isValid else { throw CameraError.message("Invalid camera format.") }
-                self.configuration = configuration; frameDuration = configuration.duration
-                self.publish = publish; self.captureOnly = captureOnly
-                if let background {
-                    guard settings.isValid else { throw CameraError.message("Invalid green-screen settings.") }
-                    keyer = try GreenScreenProcessor(background: background, width: configuration.width, height: configuration.height)
-                    keySettings = settings
-                }
-                if publish { try transport.start(configuration: configuration) }
+                self.configuration = configuration
                 try makePool()
                 running = true; frame = 0
-                captureRate.reset(at: ProcessInfo.processInfo.systemUptime)
-                let metricsTimer = DispatchSource.makeTimerSource(queue: queue)
-                metricsTimer.schedule(deadline: .now() + 1, repeating: 1)
-                metricsTimer.setEventHandler { [weak self] in
-                    guard let self else { return }
-                    let count = self.captureRate.count
-                    self.onCaptureRate?(self.captureRate.sample(at: ProcessInfo.processInfo.systemUptime), count)
-                }
-                self.metricsTimer = metricsTimer; metricsTimer.resume()
                 switch mode {
                 case .pattern:
                     pattern = try makePattern()
@@ -83,66 +50,19 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     self.timer = timer; timer.resume()
                 case .camera(let id): try startCamera(id: id)
                 }
-                reportStatus()
             } catch { fail(error) }
         }
     }
-    /// Applied between frames without restarting capture or changing the output destination.
-    func setGreenScreen(background: CGImage?, settings: KeySettings) {
-        queue.async { [self] in
-            guard running else { return }
-            do {
-                guard settings.isValid else { throw CameraError.message("Invalid green-screen settings.") }
-                let next = try background.map { try GreenScreenProcessor(background: $0, width: configuration.width, height: configuration.height) }
-                keyer = next; keySettings = settings
-                if next == nil { previewMode = .composite }
-                reportStatus()
-            } catch { fail(error) }
-        }
-    }
-    func setPublishing(_ enabled: Bool) {
-        queue.async { [self] in
-            guard running else { return }
-            do {
-                if enabled != publish {
-                    if enabled { try transport.start(configuration: configuration) } else { transport.stop() }
-                    publish = enabled
-                }
-                reportStatus()
-            } catch { fail(error) }
-        }
-    }
-    private func reportStatus() {
-        onState?(publish, cameraReady)
-        let processing = keyer == nil ? "Camera" : "Green-screen"
-        onStatus?(publish ? "\(processing) picture sent to AppleCam. Check your meeting preview to confirm delivery." : "\(processing) preview — local only.", true)
-    }
-    func stop() { queue.async { [self] in stopOnQueue(); onStatus?("Stopped — no new frames sent.", false) } }
-    func updateKey(_ settings: KeySettings) {
-        queue.async { [self] in
-            guard settings.isValid else { fail(CameraError.message("Invalid green-screen settings.")); return }
-            keySettings = settings
-        }
-    }
-    func sample(x: Double, y: Double) {
-        queue.async { [self] in
-            guard running, let latestRaw else { onSample?(.failure(CameraError.message("Start a preview before sampling the screen."))); return }
-            onSample?(Result { try GreenScreenProcessor.sample(latestRaw, x: x, y: y) })
-        }
-    }
+    func stop() { queue.async { [self] in stopOnQueue() } }
     private func stopOnQueue() {
         running = false
-        publish = false; cameraReady = false
-        onState?(false, false)
-        metricsTimer?.cancel(); metricsTimer = nil
         timer?.cancel(); timer = nil
         watchdog?.cancel(); watchdog = nil
         observations.forEach(NotificationCenter.default.removeObserver); observations.removeAll()
         session?.stopRunning(); session = nil; camera = nil
-        transport.stop(); pool = nil; videoDescription = nil; pattern = nil
-        latestRaw = nil; keyer = nil
+        pool = nil; pattern = nil
     }
-    private func fail(_ error: Error) { stopOnQueue(); onFailure?(error); onStatus?(error.localizedDescription, false) }
+    private func fail(_ error: Error) { stopOnQueue(); onFailure?(error) }
     private func makePool() throws {
         let attributes: [CFString: Any] = [kCVPixelBufferWidthKey: configuration.width,
             kCVPixelBufferHeightKey: configuration.height, kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
@@ -154,7 +74,7 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private func makePattern() throws -> CIImage {
         let width = configuration.width, height = configuration.height
         guard let bitmap = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bytesPerRow: width * 4, space: space,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CameraError.message("Cannot draw diagnostic pattern") }
         let colors: [NSColor] = [.white, .yellow, .cyan, .green, .magenta, .red, .blue, .black]
         for (index, color) in colors.enumerated() {
@@ -174,7 +94,6 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
     private func drawPattern() {
         guard running, let pattern else { return }
-        captureRate.record()
         let bar = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to:
             CGRect(x: (frame * 16) % configuration.width, y: 60, width: 12, height: 160))
         emit(bar.composited(over: pattern), at: CMClockGetTime(CMClockGetHostTimeClock()))
@@ -186,10 +105,9 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard let device = Self.cameras().first(where: { $0.uniqueID == id }) else {
             throw CameraError.message("The selected camera is disconnected.")
         }
-        guard let (format, requestedDuration) = CameraCapabilities.selection(for: configuration, device: device) else {
+        guard let (format, frameDuration) = CameraCapabilities.selection(for: configuration, device: device) else {
             throw CameraError.message("The selected camera no longer offers \(configuration.label). Choose another available format.")
         }
-        frameDuration = requestedDuration
         let session = AVCaptureSession()
         session.beginConfiguration()
         let input = try AVCaptureDeviceInput(device: device)
@@ -222,25 +140,22 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
         }
         self.watchdog = watchdog; watchdog.resume()
-        try device.lockForConfiguration()
-        device.activeFormat = format
-        device.activeVideoMinFrameDuration = frameDuration
-        device.activeVideoMaxFrameDuration = frameDuration
-        device.unlockForConfiguration()
+        try pin(device, format: format, duration: frameDuration)
         session.startRunning()
         // Session startup applies the preset's hardware timing (24 fps on this BRIO).
         // Pin the selected format and exact supported duration after that completes,
         // before this serial queue can process any capture callbacks.
+        try pin(device, format: format, duration: frameDuration)
+    }
+    private func pin(_ device: AVCaptureDevice, format: AVCaptureDevice.Format, duration: CMTime) throws {
         try device.lockForConfiguration()
         defer { device.unlockForConfiguration() }
         device.activeFormat = format
-        device.activeVideoMinFrameDuration = frameDuration
-        device.activeVideoMaxFrameDuration = frameDuration
+        device.activeVideoMinFrameDuration = duration
+        device.activeVideoMaxFrameDuration = duration
     }
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard running, camera != nil, let image = sampleBuffer.imageBuffer else { return }
-        captureRate.record()
-        if !cameraReady { cameraReady = true; reportStatus() }
         guard CVPixelBufferGetWidth(image) == configuration.width, CVPixelBufferGetHeight(image) == configuration.height else {
             fail(CameraError.message("Camera delivered an unsupported frame size.")); return
         }
@@ -251,57 +166,15 @@ final class FrameProducer: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             emit(CIImage(cvPixelBuffer: image), at: timestamp)
         } catch { fail(error) }
     }
+    /// Copies the frame so the capture pool is never held by downstream composition.
     private func emit(_ image: CIImage, at time: CMTime) {
         guard running, let pool else { return }
-        do {
-            var rawAllocation: CVPixelBuffer?
-            let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
-                [kCVPixelBufferPoolAllocationThresholdKey: 5] as CFDictionary, &rawAllocation)
-            if status == kCVReturnWouldExceedAllocationThreshold { return }
-            guard status == kCVReturnSuccess, let raw = rawAllocation else { throw CameraError.operation("Allocate frame", status) }
-            let space = CGColorSpace(name: CGColorSpace.sRGB)!
-            context.render(image, to: raw, bounds: CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height), colorSpace: space)
-            latestRaw = raw
-            if captureOnly { onCameraFrame?(raw, time); frame += 1; return }
-            var delivered = raw
-            var localMask: CVPixelBuffer?
-            if let keyer {
-                var processed: CVPixelBuffer?
-                let result = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
-                    [kCVPixelBufferPoolAllocationThresholdKey: 5] as CFDictionary, &processed)
-                if result == kCVReturnWouldExceedAllocationThreshold { return }
-                guard result == kCVReturnSuccess, let processed else { throw CameraError.operation("Allocate processed frame", result) }
-                localMask = try keyer.render(raw, into: processed, settings: keySettings, maskPreview: previewMode == .mask)
-                delivered = processed
-            }
-            let buffer = delivered
-            CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, .shouldPropagate)
-            CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, .shouldPropagate)
-            if videoDescription == nil {
-                let result = CMVideoFormatDescriptionCreateForImageBuffer(allocator: nil, imageBuffer: buffer, formatDescriptionOut: &videoDescription)
-                guard result == noErr else { throw CameraError.operation("Describe frame", result) }
-            }
-            var timing = CMSampleTimingInfo(duration: frameDuration,
-                presentationTimeStamp: time, decodeTimeStamp: .invalid)
-            var sample: CMSampleBuffer?
-            let result = CMSampleBufferCreateReadyWithImageBuffer(allocator: nil, imageBuffer: buffer,
-                formatDescription: videoDescription!, sampleTiming: &timing, sampleBufferOut: &sample)
-            guard result == noErr, let sample else { throw CameraError.operation("Package frame", result) }
-            if publish { try transport.send(sample) }
-            // Every produced frame is eligible for preview; the UI mailbox coalesces
-            // only when the main thread actually falls behind.
-            let previewImage: CIImage
-            if keyer != nil && previewMode == .mask {
-                guard let localMask else { throw CameraError.message("Cannot render the local mask preview.") }
-                previewImage = CIImage(cvPixelBuffer: localMask, options: [.colorSpace: space])
-            } else {
-                previewImage = keyer == nil ? image : CIImage(cvPixelBuffer: buffer, options: [.colorSpace: space])
-            }
-            guard let preview = context.createCGImage(previewImage, from: previewImage.extent) else {
-                throw CameraError.message("Cannot render preview frame.")
-            }
-            onPreview?(preview)
-            frame += 1
-        } catch { fail(error) }
+        var allocation: CVPixelBuffer?
+        let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
+            [kCVPixelBufferPoolAllocationThresholdKey: 5] as CFDictionary, &allocation)
+        if status == kCVReturnWouldExceedAllocationThreshold { return }
+        guard status == kCVReturnSuccess, let raw = allocation else { fail(CameraError.operation("Allocate frame", status)); return }
+        context.render(image, to: raw, bounds: CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height), colorSpace: space)
+        onCameraFrame?(raw, time); frame += 1
     }
 }

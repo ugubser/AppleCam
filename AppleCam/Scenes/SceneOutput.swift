@@ -106,7 +106,7 @@ final class SceneOutput: @unchecked Sendable {
         cameraRunning = needed; cameraFrames.enable(needed); freshness = SceneCameraFreshness()
         if needed {
             startedAt = CMClockGetTime(CMClockGetHostTimeClock()).seconds
-            camera.start(mode: cameraMode, publish: false, configuration: cameraConfiguration, captureOnly: true)
+            camera.start(mode: cameraMode, configuration: cameraConfiguration)
         } else { camera.stop() }
     }
     private func stopOnQueue() {

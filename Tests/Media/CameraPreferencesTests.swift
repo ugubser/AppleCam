@@ -15,7 +15,7 @@ final class CameraPreferencesTests: XCTestCase {
     @MainActor func testSharedScenesAndCameraCalibrationSurviveCameraSwitchAndRestart() throws {
         let store = try store(), model = CameraModel(preferencesStore: store)
         model.selection = "camera-a"; model.key.protection = 0.81; model.setGreenScreen(true)
-        model.captureConfiguration = .init(width: 3840, height: 2160, fps: 24); model.controlsExpanded = false
+        model.captureConfiguration = .init(width: 3840, height: 2160, fps: 24)
         model.outputConfiguration = .init(width: 1920, height: 1080, fps: 30)
         try model.importMedia(fixture); model.renameScene("Office")
         let imageID = try XCTUnwrap(model.selectedLayerID)
@@ -27,9 +27,10 @@ final class CameraPreferencesTests: XCTestCase {
         XCTAssertEqual(model.key, KeySettings()); XCTAssertFalse(model.useGreenScreen)
         model.key.spill = 0.25; model.captureConfiguration = .init(width: 1280, height: 720, fps: 60)
         model.selection = "camera-a"
-        XCTAssertEqual(model.key.protection, 0.81); XCTAssertTrue(model.useGreenScreen); XCTAssertFalse(model.controlsExpanded)
+        XCTAssertEqual(model.key.protection, 0.81); XCTAssertTrue(model.useGreenScreen)
         XCTAssertEqual(model.captureConfiguration, .init(width: 3840, height: 2160, fps: 24))
         XCTAssertEqual(model.outputConfiguration, .init(width: 1920, height: 1080, fps: 30))
+        model.flushPreferences()
         let restored = CameraModel(preferencesStore: PreferencesStore(directory: store.directory))
         XCTAssertEqual(restored.scenes, scenes); XCTAssertEqual(restored.selectedScene, 2)
         XCTAssertEqual(restored.key.protection, 0.81); XCTAssertFalse(restored.running); XCTAssertFalse(restored.publishing)
@@ -74,7 +75,7 @@ final class CameraPreferencesTests: XCTestCase {
     }
     @MainActor func testSaveFailureIsVisibleWithoutClaimingSuccess() throws {
         let store = try store(); try Data([0]).write(to: store.directory)
-        let model = CameraModel(preferencesStore: store); model.key.tolerance = 0.2
+        let model = CameraModel(preferencesStore: store); model.key.tolerance = 0.2; model.flushPreferences()
         XCTAssertTrue(model.settingsError); XCTAssertTrue(model.settingsMessage.contains("could not be saved"))
     }
     @MainActor func testQuitNotificationFlushesSceneAndCalibration() throws {
@@ -89,7 +90,7 @@ final class CameraPreferencesTests: XCTestCase {
         var layer = SceneLayer(name: "Presentation window", source: .window(reference))
         layer.placement.x = 0.3; layer.placement.width = 0.4; layer.locked = true
         model.scenes[0].layers.append(layer)
-        XCTAssertTrue(model.hideUnavailableLayer(layer.id))
+        XCTAssertTrue(model.hideUnavailableLayer(layer.id)); model.flushPreferences()
         let hidden = try XCTUnwrap(model.activeScene.layers.last)
         XCTAssertFalse(hidden.visible); XCTAssertEqual(hidden.source, layer.source); XCTAssertEqual(hidden.placement, layer.placement)
         XCTAssertTrue(hidden.locked); XCTAssertTrue(model.activeScene.layers[0].visible)
@@ -101,5 +102,47 @@ final class CameraPreferencesTests: XCTestCase {
         for _ in 0..<100 { if !model.busy { break }; try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertFalse(model.running); XCTAssertFalse(model.busy); XCTAssertFalse(model.scenePreparing); XCTAssertFalse(model.publishing)
         XCTAssertNil(model.image)
+    }
+    @MainActor func testContinuousEditsAreCoalescedIntoOneDeferredWrite() async throws {
+        let store = try store(), model = CameraModel(preferencesStore: store)
+        for value in stride(from: Float(0.10), through: 0.30, by: 0.05) { model.key.tolerance = value }
+        XCTAssertNotEqual(try store.load()?.key.tolerance, model.key.tolerance, "Dragging a slider must not write the file on every change")
+        try await Task.sleep(nanoseconds: CameraModel.saveDelay + 300_000_000)
+        XCTAssertEqual(try store.load()?.key.tolerance, model.key.tolerance)
+        model.scenes[2].name = "Flushed"; model.flushPreferences()
+        XCTAssertEqual(try store.load()?.scenes[2].name, "Flushed")
+    }
+    @MainActor func testRejectedLayerEditsLeaveTheLayerUnchanged() throws {
+        let model = CameraModel(preferencesStore: try store()), id = try XCTUnwrap(model.selectedLayerID)
+        XCTAssertFalse(model.updateLayer(id) { $0.name = "  " })
+        XCTAssertFalse(model.updateLayer(id) { $0.name = "Half"; $0.placement.width = 0 }, "An invalid size rejects the whole edit")
+        XCTAssertEqual(model.selectedLayer?.name, "Webcam"); XCTAssertEqual(model.selectedLayer?.placement.width, 1)
+        XCTAssertTrue(model.updateLayer(id) { $0.placement.width = 0.4 })
+        XCTAssertEqual(model.selectedLayer?.placement.width, 0.4)
+        XCTAssertFalse(model.updateLayer(UUID()) { $0.name = "Missing" })
+        let browser = SceneLayer(name: "Web", source: .browser(BrowserSettings())); model.scenes[0].layers.append(browser)
+        XCTAssertFalse(model.updateLayer(browser.id) { $0.source = .browser(BrowserSettings(url: "file:///etc/hosts")) })
+        XCTAssertEqual(model.activeScene.layers.last?.source, browser.source)
+    }
+    @MainActor func testSceneNamesAreTrimmedAndBlankNamesRejected() throws {
+        let model = CameraModel(preferencesStore: try store())
+        XCTAssertFalse(model.renameScene("   ")); XCTAssertEqual(model.activeScene.name, "Scene 1")
+        XCTAssertTrue(model.renameScene("  Studio ")); XCTAssertEqual(model.activeScene.name, "Studio")
+    }
+    @MainActor func testTypedFormatValuesAreValidatedBeforeApplying() throws {
+        let model = CameraModel(preferencesStore: try store())
+        XCTAssertFalse(model.setOutput(width: 0)); XCTAssertFalse(model.setOutput(fps: -5))
+        XCTAssertEqual(model.outputConfiguration, CaptureConfiguration())
+        XCTAssertTrue(model.setOutput(width: 1280, height: 720)); XCTAssertTrue(model.setOutput(fps: 25))
+        XCTAssertEqual(model.outputConfiguration, .init(width: 1280, height: 720, fps: 25))
+        XCTAssertFalse(model.setCaptureFPS(.infinity)); XCTAssertTrue(model.setCaptureFPS(24))
+        XCTAssertEqual(model.captureConfiguration.fps, 24)
+    }
+    @MainActor func testCanvasColourIsValidatedAndPerScene() throws {
+        let model = CameraModel(preferencesStore: try store())
+        model.setCanvasColor(red: 0.2, green: 0.4, blue: 0.6)
+        model.setCanvasColor(red: 2, green: 0, blue: 0)
+        XCTAssertEqual(model.activeScene.canvasRed, 0.2); XCTAssertEqual(model.activeScene.canvasBlue, 0.6)
+        XCTAssertEqual(model.scenes[1].canvasRed, 0)
     }
 }

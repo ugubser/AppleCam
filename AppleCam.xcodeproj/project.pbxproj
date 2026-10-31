@@ -11,8 +11,16 @@
 "20A9E94E00AD4653B6FB7EE9" = { "isa" = "PBXBuildFile"; "fileRef" = "93517269DD914CF3823465F8"; };
 "105D96028C7C45B49AF7FB11" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneMediaSource.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "ED22E55D2B5348B08652D168" = { "isa" = "PBXBuildFile"; "fileRef" = "105D96028C7C45B49AF7FB11"; };
-"8E031198D3AF4679BF3973D3" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneEditor.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
-"0445FB0160DC44809D08F422" = { "isa" = "PBXBuildFile"; "fileRef" = "8E031198D3AF4679BF3973D3"; };
+"E88002474A354E06A8A5D191" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/ContentView.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"32788C356CFB4232B86540D1" = { "isa" = "PBXBuildFile"; "fileRef" = "E88002474A354E06A8A5D191"; };
+"55E6F6C1C0F34FDEBD11E2D4" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/SidebarView.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"C2BBEDFFBCFF44F68F9EC0C5" = { "isa" = "PBXBuildFile"; "fileRef" = "55E6F6C1C0F34FDEBD11E2D4"; };
+"1D98260F216045728A331BAE" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/SceneCanvas.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"7D7E789F4102456BAAB6EDC0" = { "isa" = "PBXBuildFile"; "fileRef" = "1D98260F216045728A331BAE"; };
+"664EFA9CDB0842EA80C28CA7" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/InspectorView.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"688408C2F45D459C9B9077BF" = { "isa" = "PBXBuildFile"; "fileRef" = "664EFA9CDB0842EA80C28CA7"; };
+"5B77C32FD054431EB5D3231A" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/DraftField.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"9A575C986E724027AA1731A4" = { "isa" = "PBXBuildFile"; "fileRef" = "5B77C32FD054431EB5D3231A"; };
 "BBA72ABAB9BF40FD84BC1A28" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneCompositor.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "4744490913014906BCC8CA75" = { "isa" = "PBXBuildFile"; "fileRef" = "BBA72ABAB9BF40FD84BC1A28"; };
 "11C52312E39F427CBFD14ABE" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/CaptureSelection.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
@@ -157,7 +165,11 @@
 "6FE54532B4784CEE89BA04ED",
 "93517269DD914CF3823465F8",
 "105D96028C7C45B49AF7FB11",
-"8E031198D3AF4679BF3973D3",
+"E88002474A354E06A8A5D191",
+"55E6F6C1C0F34FDEBD11E2D4",
+"1D98260F216045728A331BAE",
+"664EFA9CDB0842EA80C28CA7",
+"5B77C32FD054431EB5D3231A",
 "BBA72ABAB9BF40FD84BC1A28",
 "11C52312E39F427CBFD14ABE",
 "F7EED427BBA54772AF4E4146",
@@ -277,7 +289,7 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
 "DEBUG_INFORMATION_FORMAT" = "dwarf";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.2.0";
+"MARKETING_VERSION" = "0.3.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
 "MACOSX_DEPLOYMENT_TARGET" = "15.2";
@@ -286,7 +298,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "15";
+"CURRENT_PROJECT_VERSION" = "16";
 };
 };
 "94317301ACBFD4C7A4B09CFF" = {
@@ -395,7 +407,11 @@
 "5C4C94CC54BC451FBA6C3586",
 "20A9E94E00AD4653B6FB7EE9",
 "ED22E55D2B5348B08652D168",
-"0445FB0160DC44809D08F422",
+"32788C356CFB4232B86540D1",
+"C2BBEDFFBCFF44F68F9EC0C5",
+"7D7E789F4102456BAAB6EDC0",
+"688408C2F45D459C9B9077BF",
+"9A575C986E724027AA1731A4",
 "4744490913014906BCC8CA75",
 "B1CB989B6C1449338BEAE039",
 "61A96FCDB0D54379845211FF",
@@ -465,7 +481,7 @@
 "SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
 "DEBUG_INFORMATION_FORMAT" = "dwarf-with-dsym";
 "DEVELOPMENT_TEAM" = "M8QBZK948M";
-"MARKETING_VERSION" = "0.2.0";
+"MARKETING_VERSION" = "0.3.0";
 "CLANG_ENABLE_MODULES" = "YES";
 "CODE_SIGN_IDENTITY" = "Apple Development";
 "MACOSX_DEPLOYMENT_TARGET" = "15.2";
@@ -474,7 +490,7 @@
 "SDKROOT" = "macosx";
 "SWIFT_VERSION" = "5.0";
 "ENABLE_HARDENED_RUNTIME" = "YES";
-"CURRENT_PROJECT_VERSION" = "15";
+"CURRENT_PROJECT_VERSION" = "16";
 };
 };
 "C7BCA3C3965F5D88DF9B6A7C" = {
