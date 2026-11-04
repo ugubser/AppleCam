@@ -7,6 +7,9 @@ import AVFoundation
 enum AudioChannelID {
     static func microphone(_ uid: String) -> String { "mic:" + uid }
     static func layer(_ id: UUID) -> String { id.uuidString }
+    /// The one channel shared by all browser layers: WebKit plays every page through one audio process.
+    static let browser = "browser"
+    static let browserName = "Browser pages"
 }
 
 /// One source's samples on the mix timeline, with its volume, mute and whether its scene is live.

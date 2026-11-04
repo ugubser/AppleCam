@@ -67,12 +67,11 @@ import WebKit
                     }
                     // Layer → Audio on: the page's media may sound and the page may change its own volume; off: silent again.
                     let state = "JSON.stringify({muted:document.querySelector('video').muted,volume:document.querySelector('video').volume})"
-                    let channel = MixChannel(id: "page", name: "Page", mix: ChannelMix(), active: true)
-                    source.setAudioChannel(channel) { _ in }; try await Task.sleep(nanoseconds: 200_000_000)
+                    source.setSound(true); try await Task.sleep(nanoseconds: 200_000_000)
                     let audible = try await source.webView.evaluateJavaScript(state) as? String
                     _ = try await source.webView.evaluateJavaScript("document.querySelector('video').volume = 0.5")
                     let pageVolume = try await source.webView.evaluateJavaScript("document.querySelector('video').volume") as? Double
-                    source.setAudioChannel(nil) { _ in }; try await Task.sleep(nanoseconds: 200_000_000)
+                    source.setSound(false); try await Task.sleep(nanoseconds: 200_000_000)
                     let silentAgain = try await source.webView.evaluateJavaScript(state) as? String
                     print("Sound on: \(audible ?? "?"), page volume \(pageVolume ?? -1); sound off: \(silentAgain ?? "?")")
                     guard audible == #"{"muted":false,"volume":1}"#, pageVolume == 0.5, silentAgain == #"{"muted":true,"volume":0}"# else {
@@ -175,30 +174,34 @@ extension BrowserLayerHarness {
     static func forgetSession() async {
         await WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
     }
-    /// Layer → Audio on: the page's media is captured into the layer's channel per frame (it never plays through the
-    /// speakers), another origin's media is explained, the page's own mute and volume apply, and Audio off stops capture.
+    /// Layer → Audio on: AppleCam's WebKit sound is found with the search tone and tapped muted, so the page's media
+    /// (its own, a frame's, and another site's) reaches the "Browser pages" channel; the page's own mute and volume
+    /// apply, and Audio off silences the page. Needs System Audio Recording permission for this harness.
     static func verifyPageSound(url: String) async throws {
         let source = try await BrowserSceneSource(settings: BrowserSettings(url: url), name: "Generated sound verification", fps: 30)
         defer { source.close() }
         try await source.activate()
         try await Task.sleep(nanoseconds: 1_000_000_000)
         let mixer = AudioMixer(), tap = MixTap()
-        let channel = MixChannel(id: "page", name: "Page", mix: ChannelMix(), active: true)
+        let channel = MixChannel(id: AudioChannelID.browser, name: AudioChannelID.browserName, mix: ChannelMix(), active: true)
         mixer.onMixBlock = { tap.append($0) }
         mixer.setChannels([channel], master: ChannelMix()); mixer.start()
         defer { mixer.stop() }
-        var notes: [String] = []
-        source.setAudioChannel(channel) { report in if case .note(let note?) = report { notes.append(note) } }
+        let capture = BrowserAudioCapture()
+        capture.input.attach(channel)
+        defer { capture.stop() }
+        let began = Date()
+        try await capture.start()
+        print(String(format: "Found AppleCam's WebKit audio process (pid %d) in %.2f s: %@", capture.process?.pid ?? 0, Date().timeIntervalSince(began), WebKitAudioFinder.lastReport))
+        source.setSound(true)
         // WebKit pauses muted media in a hidden page, so the tones (silent until now) are started again, as a person would.
         try await Task.sleep(nanoseconds: 200_000_000)
         _ = try await source.webView.evaluateJavaScript("for (const a of [...document.querySelectorAll('audio'), document.querySelector('iframe').contentDocument.getElementById('tone')]) a.play(); 0")
         try await Task.sleep(nanoseconds: 2_500_000_000)
         let captured = tap.take(seconds: 1)
         let near = Goertzel.level(captured, 440), frame = Goertzel.level(captured, 660), far = Goertzel.level(captured, 880)
-        print(String(format: "Captured page sound: 440 Hz %.1f dB, frame 660 Hz %.1f dB, other origin 880 Hz %.1f dB; late frames %d; notes: %@",
-                     near, frame, far, channel.timeline.droppedLate, notes.description))
-        guard near > -7, near < -5, frame > -13, frame < -11, far < -60 else { throw CameraError.message("Page sound was not captured per stream at the page's level.") }
-        guard notes.contains(where: { $0.contains("localhost") }) else { throw CameraError.message("Sound from another origin was not explained.") }
+        print(String(format: "Captured page sound: 440 Hz %.1f dB, frame 660 Hz %.1f dB, other site 880 Hz %.1f dB; late frames %d", near, frame, far, channel.timeline.droppedLate))
+        guard near > -7, near < -5, frame > -13, frame < -11, far > -7, far < -5 else { throw CameraError.message("Page sound was not captured at the page's level.") }
         // The page's own mute and volume apply to what is captured.
         _ = try await source.webView.evaluateJavaScript("document.getElementById('near').muted = true")
         _ = try await source.webView.evaluateJavaScript("document.querySelector('iframe').contentDocument.getElementById('tone').volume = 0.5")
@@ -208,12 +211,12 @@ extension BrowserLayerHarness {
         let mutedNear = Goertzel.level(changed, 440), halfFrame = Goertzel.level(changed, 660)
         print(String(format: "After the page muted 440 Hz and halved 660 Hz: %.1f dB and %.1f dB", mutedNear, halfFrame))
         guard mutedNear < -60, abs(halfFrame - (frame - 6)) < 1 else { throw CameraError.message("The page's own mute or volume did not apply to captured sound.") }
-        source.setAudioChannel(nil) { _ in }
+        source.setSound(false)
         try await Task.sleep(nanoseconds: 600_000_000); _ = tap.take(seconds: 1)
         try await Task.sleep(nanoseconds: 800_000_000)
-        let afterOff = Goertzel.level(tap.take(seconds: 0.5), 660)
-        guard afterOff < -60 else { throw CameraError.message("Page sound was still captured with Audio off.") }
-        print("Page sound capture, other-origin note, page mute/volume and Audio off passed.")
+        let afterOff = tap.take(seconds: 0.5)
+        guard Goertzel.level(afterOff, 660) < -60, Goertzel.level(afterOff, 880) < -60 else { throw CameraError.message("The page still made sound with Audio off.") }
+        print("Page sound capture (page, frame and other site), page mute/volume and Audio off passed.")
         await source.deactivate()
     }
 }

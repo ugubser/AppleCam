@@ -206,7 +206,7 @@ struct LayerAudioSection: View {
     static func note(_ source: LayerSource) -> String {
         switch source {
         case .clip: return "The clip's sound goes into the mix only; it is not played through your speakers. Use Monitor to listen."
-        case .browser: return "The page's video and audio players go into the mix only; they are not played through your speakers. Use Monitor to listen. Pages that make sound with Web Audio (games, synthesizers) stay silent."
+        case .browser: return "All browser layers share one “Browser pages” channel; this switch decides whether this page makes sound. Page sound goes into the mix only, not through your speakers (use Monitor to listen). Needs System Audio Recording permission, which macOS asks for the first time. Pages that make sound with Web Audio (games, synthesizers) stay silent."
         case .window, .display: return "Needs Screen Recording permission. The app keeps playing through your speakers as usual. Apps that are using a microphone (for example a meeting) are left out so other participants are never recorded."
         default: return ""
         }

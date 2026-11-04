@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""Opt-in capture of an app-owned WebKit window containing generated local video."""
+"""Opt-in capture of an app-owned WebKit window containing generated local video and sound.
+
+The sound check taps AppleCam's WebKit audio process, which needs System Audio Recording permission for the harness
+(macOS asks the first time). Set APPLECAM_SIGNING_IDENTITY to a code-signing identity so that permission survives
+rebuilds; without it the harness is signed ad hoc and macOS asks again after every build.
+"""
 import functools
+import os
 import http.server
 import math
 import plistlib
@@ -52,16 +58,28 @@ with tempfile.TemporaryDirectory(prefix="applecam-browser-") as temporary:
     app = ROOT / "work/BrowserLayerHarness.app"
     executable = app / "Contents/MacOS/BrowserLayerHarness"
     executable.parent.mkdir(parents=True, exist_ok=True)
-    (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.vanguardsignals.AppleCam.BrowserLayerHarness", "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleName": "AppleCam Browser Verification", "LSMinimumSystemVersion": "15.2"}))
+    (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.vanguardsignals.AppleCam.BrowserLayerHarness", "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleName": "AppleCam Browser Verification", "LSMinimumSystemVersion": "15.2",
+        "NSAudioCaptureUsageDescription": "Verifies that AppleCam captures its browser layers' sound and keeps it off the speakers."}))
     sources = [*sorted((ROOT / "Shared").glob("*.swift")), ROOT / "AppleCam/Processing/GreenScreenProcessor.swift", ROOT / "AppleCam/Scenes/SceneMediaSource.swift", ROOT / "AppleCam/Scenes/BrowserSceneSource.swift", ROOT / "AppleCam/Scenes/CaptureSelection.swift",
                *sorted((ROOT / "AppleCam/Audio").glob("*.swift")), *sorted((ROOT / "AppleCam/Recording").glob("*.swift")), ROOT / "Tests/Integration/BrowserLayerHarness.swift"]
     subprocess.run(["swiftc", "-parse-as-library", "-target", "arm64-apple-macos15.2", *map(str, sources), "-o", str(executable)], cwd=ROOT, check=True)
+    subprocess.run(["codesign", "-f", "-s", os.environ.get("APPLECAM_SIGNING_IDENTITY", "-"), str(app)], cwd=ROOT, check=True, capture_output=True)
     address = f"http://127.0.0.1:{server.server_port}/index.html"
     sound = f"http://127.0.0.1:{server.server_port}/sound.html"
     token = secrets.token_hex(8)
+
+    def launch(*arguments, success):
+        """Launches the harness as its own app (so macOS asks the harness, not the terminal, for audio permission)."""
+        log = directory / "harness.log"
+        subprocess.run(["open", "-W", "-n", "--stdout", str(log), "--stderr", str(log), str(app), "--args", *arguments], check=True)
+        output = log.read_text(); log.unlink()
+        print(output, end="")
+        if success not in output or "failed" in output:
+            raise SystemExit("Browser layer integration failed.")
+
     try:
         # Two launches: the first stores a session, the second checks it was kept, then runs the other checks.
-        subprocess.run([str(executable), "--write-session", address, token], cwd=ROOT, check=True)
-        subprocess.run([str(executable), address, sound, token], cwd=ROOT, check=True)
+        launch("--write-session", address, token, success="")
+        launch(address, sound, token, success="pause/resume and explicit user-pause preservation passed.")
     finally:
         server.shutdown(); server.server_close(); thread.join()

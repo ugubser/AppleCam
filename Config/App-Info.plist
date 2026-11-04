@@ -28,6 +28,8 @@
 	<string>AppleCam uses your selected camera for an explicit preview or virtual camera output.</string>
 	<key>NSCameraUseContinuityCameraDeviceType</key>
 	<true/>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>AppleCam records the sound of its own browser layers and keeps it off your speakers, only while a browser layer's Audio is on.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>AppleCam records the microphones you add to its audio mixer, only while a scene runs.</string>
 	<key>NSSystemExtensionUsageDescription</key>

@@ -57,6 +57,17 @@ import ScreenCaptureKit
                 try await Task.sleep(nanoseconds: 1_500_000_000); control.stop()
                 result["ownOutputControlPeak"] = Double(own.takePeakDB())
             }
+            // Browser sound starts after macOS's permission prompt (answered whenever the person sees it) and the search.
+            // The scene runs first (a preview), so the browser capture starts and the recording begins only once it is ready.
+            if layers.contains(where: \.source.isBrowser) {
+                model.start(publish: false)
+                let asked = Date(), deadline = Date().addingTimeInterval(300)
+                while model.audioRuntime?.browserSoundReady != true, model.channelFailures[AudioChannelID.browser] == nil, Date() < deadline {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+                result["browserSoundReadyAfter"] = Date().timeIntervalSince(asked)
+                result["browserSearch"] = WebKitAudioFinder.lastReport
+            }
             model.startRecording()
             let deadline = Date().addingTimeInterval(20)
             while model.recording == nil, Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }

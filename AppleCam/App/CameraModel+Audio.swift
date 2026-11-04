@@ -26,9 +26,16 @@ extension CameraModel {
         let live = Set(activeScene.layers.filter(\.visible).map(\.id))
         let layers = scenes.flatMap(\.layers).filter(\.hasAudio)
         var rows = audio.microphones.map { MixerRow(id: AudioChannelID.microphone($0.deviceID), name: $0.name, kind: .microphone, mix: $0.mix, live: true, scope: nil) }
-        rows += layers.map {
+        rows += layers.filter { !$0.source.isBrowser }.map {
             MixerRow(id: AudioChannelID.layer($0.id), name: $0.name, kind: .layer($0.source), mix: $0.audio?.mix ?? ChannelMix(),
                      live: live.contains($0.id), scope: Self.audioScope($0.source))
+        }
+        // WebKit plays every page through one audio process, so all browser layers share one channel.
+        let pages = layers.filter(\.source.isBrowser)
+        if let first = pages.first {
+            rows.append(MixerRow(id: AudioChannelID.browser, name: AudioChannelID.browserName, kind: .layer(first.source), mix: audio.browser,
+                                 live: pages.contains { live.contains($0.id) },
+                                 scope: "Pages with Audio on: " + pages.map(\.name).joined(separator: ", ") + "."))
         }
         return rows
     }
@@ -75,6 +82,7 @@ extension CameraModel {
     /// Volume, mute or offset of a channel (`AudioChannelID`), or of the whole mix for "mix".
     func setMix(_ id: String, _ change: (inout ChannelMix) -> Void) {
         if id == "mix" { var m = audio.master; change(&m); if m.isValid { audio.master = m }; return }
+        if id == AudioChannelID.browser { var m = audio.browser; change(&m); if m.isValid { audio.browser = m }; return }
         if let index = audio.microphones.firstIndex(where: { AudioChannelID.microphone($0.deviceID) == id }) {
             var m = audio.microphones[index].mix; change(&m); if m.isValid { audio.microphones[index].mix = m }; return
         }

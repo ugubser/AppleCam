@@ -59,9 +59,21 @@ public struct AudioPreferences: Codable, Equatable, Sendable {
     /// Plays the mix on `monitorDeviceUID` (nil: the system output).
     public var monitor = false
     public var monitorDeviceUID: String?
+    /// All browser layers share one channel: WebKit plays every page through one audio process.
+    public var browser = ChannelMix()
     public init() {}
     public var isValid: Bool {
-        microphones.allSatisfy(\.isValid) && Set(microphones.map(\.deviceID)).count == microphones.count && master.isValid
+        microphones.allSatisfy(\.isValid) && Set(microphones.map(\.deviceID)).count == microphones.count && master.isValid && browser.isValid
+    }
+    private enum CodingKeys: String, CodingKey { case microphones, master, monitor, monitorDeviceUID, browser }
+    /// Settings saved before a field existed keep their other values; the missing field takes its default.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        microphones = try c.decodeIfPresent([MicrophoneChannel].self, forKey: .microphones) ?? []
+        master = try c.decodeIfPresent(ChannelMix.self, forKey: .master) ?? ChannelMix()
+        monitor = try c.decodeIfPresent(Bool.self, forKey: .monitor) ?? false
+        monitorDeviceUID = try c.decodeIfPresent(String.self, forKey: .monitorDeviceUID)
+        browser = try c.decodeIfPresent(ChannelMix.self, forKey: .browser) ?? ChannelMix()
     }
 }
 
@@ -178,47 +190,55 @@ public enum ChannelLayoutMath {
     }
 }
 
-/// A block of sound sent by a browser layer's page script (`BrowserSceneSource.silenceScript`). The page is untrusted:
-/// every field is checked, samples are made finite and bounded, and the time must be close to now.
-public struct PageAudioPacket: Equatable, Sendable {
-    public static let maximumFrames = 16_384
-    public static let sampleRates: ClosedRange<Double> = 8_000...192_000
-    /// Packets stamped further than this from now (seconds) are rejected.
-    public static let maximumAge: Double = 5
-    /// Identifies the frame (document) that played the sound.
-    public let stream: String
-    /// Wall-clock time (ms since 1970) at which the first frame would have been heard.
-    public let wallTime: Double
-    public let sampleRate: Double
-    /// Interleaved stereo samples.
-    public let samples: [Float]
-    public var frames: Int { samples.count / 2 }
+/// Finding AppleCam's WebKit audio process: AppleCam plays a quiet, high tone at a frequency chosen at random for each
+/// search in a page of its own, listens briefly to every WebKit audio process and keeps the one that carries the tone.
+/// There is no public API that names the app a WebKit process plays for, and another app's WebKit process must never be
+/// muted, so the search succeeds only when exactly one process carries the tone.
+public enum WebKitAudioSignature {
+    /// The tone's candidate frequencies: above most program material and most adults' hearing, below 20 kHz.
+    public static let frequencies: [Double] = stride(from: 17_000.0, through: 19_000.0, by: 50).map { $0 }
+    /// The tone's amplitude (−40 dBFS): quiet, and short, but far above the detector's floor.
+    public static let amplitude = 0.01
+    public static let seconds = 1.5
+    /// A process carries the tone when it is at least this loud and this far above its neighbours.
+    public static let minimumDB = -70.0
+    public static let contrastDB = 20.0
+    /// Neighbouring frequencies compared with the tone (any other sound is broad, the tone is one line).
+    public static let neighbourOffsets = [-450.0, -300.0, 300.0, 450.0]
 
-    public init?(body: Any, wallNow: Double) {
-        guard let body = body as? [String: Any], let stream = body["s"] as? String, (1...64).contains(stream.utf8.count),
-              let time = (body["t"] as? NSNumber)?.doubleValue, time.isFinite, abs(wallNow - time) <= Self.maximumAge * 1000,
-              let rate = (body["r"] as? NSNumber)?.doubleValue, Self.sampleRates.contains(rate),
-              let encoded = body["d"] as? String, let data = Data(base64Encoded: encoded),
-              data.count > 0, data.count % 8 == 0, data.count / 8 <= Self.maximumFrames else { return nil }
-        var samples = [Float](repeating: 0, count: data.count / 4)
-        _ = samples.withUnsafeMutableBytes { data.copyBytes(to: $0) }
-        for i in samples.indices { let v = samples[i]; samples[i] = v.isFinite ? min(max(v, -4), 4) : 0 }
-        self.stream = stream; wallTime = time; sampleRate = rate; self.samples = samples
+    /// Interleaved 16-bit mono WAV of the tone, with 20 ms fades so it never clicks.
+    public static func wav(frequency: Double, sampleRate: Double = AudioFormat.sampleRate) -> Data {
+        let frames = Int(seconds * sampleRate), fade = Int(0.02 * sampleRate)
+        var data = Data()
+        func append<T: FixedWidthInteger>(_ value: T) { withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) } }
+        data.append(contentsOf: Array("RIFF".utf8)); append(UInt32(36 + frames * 2)); data.append(contentsOf: Array("WAVEfmt ".utf8))
+        append(UInt32(16)); append(UInt16(1)); append(UInt16(1)); append(UInt32(sampleRate)); append(UInt32(sampleRate * 2)); append(UInt16(2)); append(UInt16(16))
+        data.append(contentsOf: Array("data".utf8)); append(UInt32(frames * 2))
+        for i in 0..<frames {
+            let envelope = min(1, Double(i) / Double(fade), Double(frames - 1 - i) / Double(fade))
+            append(Int16((amplitude * envelope * sin(2 * .pi * frequency * Double(i) / sampleRate) * 32767).rounded()))
+        }
+        return data
     }
-    /// The host-clock time of the first frame, given the host and wall clocks read at the same moment.
-    public func hostTime(hostNow: Double, wallNow: Double) -> Double { hostNow - (wallNow - wallTime) / 1000 }
-}
-
-/// What a browser layer's page reports about sound it cannot hand to AppleCam.
-public enum PageAudioNote {
-    public static let unavailable = "Some of this page's sound cannot be captured, so it stays silent."
-    /// The explanation for a page script's note message, or nil if the body is not one.
-    public static func parse(_ body: Any) -> String? {
-        guard let body = body as? [String: Any], let kind = body["note"] as? String else { return nil }
-        if kind == "unavailable" { return unavailable }
-        guard kind == "blocked", let host = body["host"] as? String else { return nil }
-        let clean = String(String.UnicodeScalarView(host.unicodeScalars.filter { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "-.:[]".unicodeScalars.contains($0)) }).prefix(253))
-        guard !clean.isEmpty else { return nil }
-        return "Sound from \(clean) cannot be recorded: that site does not let other pages use its sound, so it stays silent."
+    /// Amplitude of `frequency` in dBFS (a full-scale sine reads 0 dB).
+    public static func level(_ samples: [Float], frequency: Double, sampleRate: Double) -> Double {
+        guard !samples.isEmpty else { return -120 }
+        let w = 2 * Double.pi * frequency / sampleRate, c = 2 * cos(w)
+        var s1 = 0.0, s2 = 0.0
+        for x in samples { let s0 = Double(x) + c * s1 - s2; s2 = s1; s1 = s0 }
+        let amplitude = 2 * sqrt(max(s1 * s1 + s2 * s2 - c * s1 * s2, 0)) / Double(samples.count)
+        return amplitude > 1e-6 ? 20 * log10(amplitude) : -120
+    }
+    /// Whether `samples` (one channel) carry the tone.
+    public static func carries(_ samples: [Float], frequency: Double, sampleRate: Double) -> Bool {
+        let tone = level(samples, frequency: frequency, sampleRate: sampleRate)
+        let around = neighbourOffsets.map { level(samples, frequency: frequency + $0, sampleRate: sampleRate) }.max() ?? -120
+        return tone >= minimumDB && tone - around >= contrastDB
+    }
+    public enum Outcome: Equatable { case found(Int32), none, several([Int32]) }
+    /// The one process that carried the tone; none or several is a failure, never a guess.
+    public static func choose(_ carried: [Int32: Bool]) -> Outcome {
+        let matches = carried.filter(\.value).map(\.key).sorted()
+        switch matches.count { case 1: return .found(matches[0]); case 0: return .none; default: return .several(matches) }
     }
 }

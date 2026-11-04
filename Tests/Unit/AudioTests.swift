@@ -92,36 +92,53 @@ final class AudioTests: XCTestCase {
         timeline.forget(stream: 1); XCTAssertEqual(timeline.streamCount, 1)
         timeline.restart(); XCTAssertEqual(timeline.streamCount, 0)
     }
-    private func packet(_ samples: [Float], time: Double = 1_000_000, rate: Double = 48_000, stream: String = "frame") -> [String: Any] {
-        let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
-        return ["s": stream, "t": time, "r": rate, "d": data.base64EncodedString()]
+    // MARK: Finding AppleCam's WebKit audio process
+
+    private func wavSamples(_ data: Data) -> [Float] {
+        data.dropFirst(44).withUnsafeBytes { raw in raw.bindMemory(to: Int16.self).map { Float($0) / 32767 } }
     }
-    func testPageAudioPacketIsCheckedAndBounded() throws {
-        let now = 1_000_000.0
-        let good = try XCTUnwrap(PageAudioPacket(body: packet([0.5, -0.5, .nan, .infinity, 9, -9]), wallNow: now))
-        XCTAssertEqual(good.frames, 3); XCTAssertEqual(good.stream, "frame")
-        XCTAssertEqual(good.samples, [0.5, -0.5, 0, 0, 4, -4], "Non-finite samples become silence; extremes are bounded")
-        XCTAssertNil(PageAudioPacket(body: packet([0.5]), wallNow: now), "Interleaved stereo only: whole frames")
-        XCTAssertNil(PageAudioPacket(body: packet([0, 0], time: now - 6_000), wallNow: now), "A stale time is rejected")
-        XCTAssertNil(PageAudioPacket(body: packet([0, 0], time: .nan), wallNow: now))
-        XCTAssertNil(PageAudioPacket(body: packet([0, 0], rate: 1_000_000), wallNow: now))
-        XCTAssertNil(PageAudioPacket(body: packet([0, 0], stream: ""), wallNow: now))
-        XCTAssertNil(PageAudioPacket(body: packet([Float](repeating: 0, count: (PageAudioPacket.maximumFrames + 1) * 2)), wallNow: now))
-        XCTAssertNil(PageAudioPacket(body: ["s": "frame", "t": now, "r": 48_000, "d": "not base64!"], wallNow: now))
-        XCTAssertNil(PageAudioPacket(body: "text", wallNow: now))
+    private func sine(_ frequency: Double, amplitude: Double, count: Int = 24_000, rate: Double = 48_000) -> [Float] {
+        (0..<count).map { Float(amplitude * sin(2 * .pi * frequency * Double($0) / rate)) }
     }
-    func testPageAudioTimeMapsTheWallClockToTheHostClock() throws {
-        let p = try XCTUnwrap(PageAudioPacket(body: packet([0, 0], time: 1_000_000 - 120), wallNow: 1_000_000))
-        XCTAssertEqual(p.hostTime(hostNow: 500, wallNow: 1_000_000), 499.88, accuracy: 1e-9, "Heard 120 ms ago on the wall clock")
+    func testSignatureToneIsAQuietHighWavWithFades() {
+        let data = WebKitAudioSignature.wav(frequency: 18_000)
+        XCTAssertEqual(String(decoding: data.prefix(4), as: UTF8.self), "RIFF")
+        XCTAssertEqual(String(decoding: data[8..<16], as: UTF8.self), "WAVEfmt ")
+        let samples = wavSamples(data)
+        XCTAssertEqual(samples.count, Int(WebKitAudioSignature.seconds * 48_000))
+        XCTAssertEqual(samples.first ?? 1, 0, accuracy: 1e-4, "Fades in, so it never clicks")
+        XCTAssertEqual(Double(samples.map(abs).max() ?? 0), WebKitAudioSignature.amplitude, accuracy: 0.001)
+        XCTAssertEqual(WebKitAudioSignature.level(samples, frequency: 18_000, sampleRate: 48_000), -40, accuracy: 0.5)
+        XCTAssertTrue(WebKitAudioSignature.frequencies.allSatisfy { (17_000...19_000).contains($0) })
     }
-    func testPageAudioNotes() {
-        XCTAssertEqual(PageAudioNote.parse(["note": "blocked", "host": "cdn.example.com"]),
-                       "Sound from cdn.example.com cannot be recorded: that site does not let other pages use its sound, so it stays silent.")
-        XCTAssertEqual(PageAudioNote.parse(["note": "blocked", "host": "evil<b>.com"]), PageAudioNote.parse(["note": "blocked", "host": "evilb.com"]), "Host names are sanitized")
-        XCTAssertEqual(PageAudioNote.parse(["note": "unavailable"]), PageAudioNote.unavailable)
-        XCTAssertNil(PageAudioNote.parse(["note": "blocked", "host": "<>"]))
-        XCTAssertNil(PageAudioNote.parse(["note": "other"]))
-        XCTAssertNil(PageAudioNote.parse(packet([0, 0])), "Sound packets are not notes")
+    func testSignatureIsFoundOnlyAsAClearLineAtItsFrequency() {
+        let tone = sine(17_550, amplitude: 0.01)
+        XCTAssertTrue(WebKitAudioSignature.carries(tone, frequency: 17_550, sampleRate: 48_000))
+        XCTAssertFalse(WebKitAudioSignature.carries(tone, frequency: 18_550, sampleRate: 48_000), "Another search's frequency")
+        // Under loud program material (music, speech) at other frequencies, the line is still found.
+        let music = zip(sine(440, amplitude: 0.5), sine(3_000, amplitude: 0.3)).map { $0 + $1 }
+        XCTAssertTrue(WebKitAudioSignature.carries(zip(music, tone).map { $0 + $1 }, frequency: 17_550, sampleRate: 48_000))
+        // Broadband noise is not a line, however loud.
+        var seed: UInt64 = 1
+        let noise = (0..<24_000).map { _ -> Float in seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Float(Int64(bitPattern: seed >> 1) % 1000) / 2000 }
+        XCTAssertFalse(WebKitAudioSignature.carries(noise, frequency: 17_550, sampleRate: 48_000))
+        XCTAssertFalse(WebKitAudioSignature.carries(sine(17_550, amplitude: 0.00001), frequency: 17_550, sampleRate: 48_000), "Too quiet")
+        XCTAssertFalse(WebKitAudioSignature.carries([], frequency: 17_550, sampleRate: 48_000), "A process that delivered nothing")
+    }
+    func testOnlyAUniqueMatchIsAccepted() {
+        XCTAssertEqual(WebKitAudioSignature.choose([10: false, 20: true, 30: false]), .found(20))
+        XCTAssertEqual(WebKitAudioSignature.choose([10: false]), .none)
+        XCTAssertEqual(WebKitAudioSignature.choose([:]), .none)
+        XCTAssertEqual(WebKitAudioSignature.choose([30: true, 10: true]), .several([10, 30]), "Never a guess between two")
+    }
+    func testAudioSettingsWithoutTheBrowserChannelStillLoad() throws {
+        var saved = AudioPreferences(); saved.master.volume = -6; saved.monitor = true; saved.browser.muted = true
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as! [String: Any]
+        XCTAssertNotNil(json["browser"])
+        json["browser"] = nil
+        let loaded = try JSONDecoder().decode(AudioPreferences.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertEqual(loaded.master.volume, -6); XCTAssertTrue(loaded.monitor); XCTAssertEqual(loaded.browser, ChannelMix())
+        XCTAssertEqual(try JSONDecoder().decode(AudioPreferences.self, from: JSONEncoder().encode(saved)), saved)
     }
     func testGainRampAndSum() {
         var samples: [Float] = [1, 1, 1, 1, 1, 1, 1, 1] // 4 stereo frames

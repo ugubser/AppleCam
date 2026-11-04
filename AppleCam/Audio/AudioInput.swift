@@ -139,6 +139,13 @@ protocol AudioCapableSource: AnyObject {
     private var channels: [String: MixChannel] = [:]
     private var microphones: [String: MicrophoneCapture] = [:]
     private var attached: [UUID: ObjectIdentifier] = [:]
+    /// Browser layers' sound, shared by all of them; pages are audible only once it is muted on the speakers.
+    private var browserCapture: BrowserAudioCapture?
+    private var browserReady = false
+    /// Whether browser layers' sound is being captured (and kept off the speakers).
+    var browserSoundReady: Bool { browserReady }
+    private var browserLayers: [UUID: Bool] = [:]
+    private var lookup: ((UUID) -> SceneMediaSource?)?
     /// A channel stopped (channel ID, explanation).
     var onFailure: ((String, String) -> Void)?
     /// A channel's note changed (channel ID, explanation or nil).
@@ -149,13 +156,16 @@ protocol AudioCapableSource: AnyObject {
         mixer.onMixBlock = { monitor.push($0) }
     }
 
-    /// Channel IDs and names in track order: microphones, then layers with audio.
+    /// Channel IDs and names in track order: microphones, layers with audio (browser layers share one channel).
     static func channelList(audio: AudioPreferences, scenes: [CameraScene]) -> [(id: String, name: String)] {
-        audio.microphones.map { (id: AudioChannelID.microphone($0.deviceID), name: $0.name) } +
-            scenes.flatMap(\.layers).filter(\.hasAudio).map { (id: AudioChannelID.layer($0.id), name: $0.name) }
+        let layers = scenes.flatMap(\.layers).filter(\.hasAudio)
+        var list = audio.microphones.map { (id: AudioChannelID.microphone($0.deviceID), name: $0.name) }
+        list += layers.filter { !$0.source.isBrowser }.map { (id: AudioChannelID.layer($0.id), name: $0.name) }
+        if layers.contains(where: \.source.isBrowser) { list.append((AudioChannelID.browser, AudioChannelID.browserName)) }
+        return list
     }
     /// Applies settings while a scene runs; `source(id)` returns the layer's running source when it has one.
-    func configure(audio: AudioPreferences, scenes: [CameraScene], live: CameraScene, source: (UUID) -> SceneMediaSource?) {
+    func configure(audio: AudioPreferences, scenes: [CameraScene], live: CameraScene, source: @escaping (UUID) -> SceneMediaSource?) {
         var next: [MixChannel] = []
         var wantedMics = Set<String>()
         for mic in audio.microphones {
@@ -176,7 +186,7 @@ protocol AudioCapableSource: AnyObject {
         let liveLayers = Set(live.layers.filter(\.visible).map(\.id))
         var attachedNow: [UUID: ObjectIdentifier] = [:]
         let all = scenes.flatMap(\.layers)
-        for layer in all where layer.hasAudio {
+        for layer in all where layer.hasAudio && !layer.source.isBrowser {
             let id = AudioChannelID.layer(layer.id)
             let channel = channel(id: id, name: layer.name)
             channel.update(mix: layer.audio?.mix ?? ChannelMix(), active: liveLayers.contains(layer.id)); next.append(channel)
@@ -191,11 +201,58 @@ protocol AudioCapableSource: AnyObject {
             (source(layer.id) as? AudioCapableSource)?.setAudioChannel(nil) { _ in }
         }
         attached = attachedNow
+        // Browser layers: one capture of AppleCam's WebKit sound; each layer's switch decides whether its page sounds.
+        lookup = source
+        browserLayers = Dictionary(uniqueKeysWithValues: all.filter(\.source.isBrowser).map { ($0.id, $0.hasAudio) })
+        let audible = all.filter { $0.hasAudio && $0.source.isBrowser }
+        if !audible.isEmpty {
+            let channel = channel(id: AudioChannelID.browser, name: AudioChannelID.browserName)
+            channel.update(mix: audio.browser, active: audible.contains { liveLayers.contains($0.id) }); next.append(channel)
+            startBrowserCapture(into: channel, layers: audible.map(\.id))
+        } else { stopBrowserCapture() }
+        applyPageSound()
         channels = Dictionary(uniqueKeysWithValues: next.map { ($0.id, $0) })
         mixer.setChannels(next, master: audio.master)
         if audio.monitor {
             do { try monitor.start(deviceUID: audio.monitorDeviceUID) } catch { monitor.stop(); onFailure?("monitor", error.localizedDescription) }
         } else { monitor.stop() }
+    }
+    private func startBrowserCapture(into channel: MixChannel, layers: [UUID]) {
+        // The sound waits for the slowest page picture among the audible layers.
+        let ages = layers.compactMap { lookup?($0) as? BrowserSceneSource }
+        if let browserCapture {
+            browserCapture.input.attach(channel)
+            browserCapture.delay = { min(ages.map(\.pictureAge).max() ?? 0, AudioFormat.latency * 0.8) }
+            return
+        }
+        let capture = BrowserAudioCapture()
+        capture.input.attach(channel)
+        capture.delay = { min(ages.map(\.pictureAge).max() ?? 0, AudioFormat.latency * 0.8) }
+        capture.onFailure = { [weak self, weak capture] message in
+            guard let self, let capture, self.browserCapture === capture else { return }
+            self.stopBrowserCapture(); self.onFailure?(AudioChannelID.browser, message)
+        }
+        browserCapture = capture
+        Task {
+            do {
+                try await capture.start()
+                guard browserCapture === capture else { return }
+                browserReady = true; applyPageSound()
+            } catch {
+                guard browserCapture === capture else { return }
+                stopBrowserCapture(); onFailure?(AudioChannelID.browser, error.localizedDescription)
+            }
+        }
+    }
+    private func stopBrowserCapture() {
+        guard let capture = browserCapture else { return }
+        browserCapture = nil; browserReady = false
+        applyPageSound()
+        capture.input.attach(nil); capture.stop()
+    }
+    /// A page sounds only while its layer's Audio is on and AppleCam's WebKit sound is muted on the speakers.
+    private func applyPageSound() {
+        for (id, enabled) in browserLayers { (lookup?(id) as? BrowserSceneSource)?.setSound(enabled && browserReady) }
     }
     private func forward(_ report: AudioReport, id: String) {
         switch report {
@@ -205,6 +262,7 @@ protocol AudioCapableSource: AnyObject {
     }
     /// Stops every microphone and clears the mix (the scene stopped).
     func stop() {
+        stopBrowserCapture(); browserLayers = [:]; lookup = nil
         microphones.values.forEach { $0.stop() }; microphones = [:]; attached = [:]; channels = [:]; monitor.stop()
         mixer.setChannels([], master: ChannelMix())
     }

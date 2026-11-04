@@ -33,109 +33,29 @@ import WebKit
     private var mediaSuspended = false
     /// Whether this page may make sound (Layer → Audio). Every page load starts silent and is switched on again.
     private var soundEnabled = false
-    private var audioChannel: MixChannel?
-    private var audioReport: (@MainActor (AudioReport) -> Void)?
-    /// One input per frame that plays sound, by the frame's stream ID.
-    private var pageStreams: [String: (input: ChannelInput, lastSeen: Double)] = [:]
-    private var nextStream = 0
-    private var pageNote: String?
-    private let audioHandler = PageAudioHandler()
-    static let maximumStreams = 8
     private var historyObservations: [NSKeyValueObservation] = []
     /// Called on the main actor when back/forward availability changes.
     var onStateChange: (() -> Void)?
-    static let audioHandlerName = "appleCamAudio"
-    /// Runs in every frame before the page's own scripts. Page media never plays through the speakers. While Layer →
-    /// Audio is off, media is forced muted. While it is on, each video and audio element is first routed into a private
-    /// Web Audio graph that has no output, and an AudioWorklet hands the samples to AppleCam, stamped with the time
-    /// they would have been heard. Muted media is not routed: WebKit then pauses hidden muted video it would otherwise
-    /// let the page restart. The page's own Web Audio stays unavailable: it cannot be routed this way.
+    /// Runs in every frame before the page's own scripts. While Layer → Audio is off, the page's media is forced silent.
+    /// While it is on, the page plays normally; `BrowserAudioCapture` then takes AppleCam's WebKit sound off the
+    /// speakers and into the mix.
     static let silenceScript = """
     (() => {
       const proto = HTMLMediaElement.prototype;
       const muted = Object.getOwnPropertyDescriptor(proto, 'muted');
       const volume = Object.getOwnPropertyDescriptor(proto, 'volume');
-      const NativeContext = window.AudioContext || window.webkitAudioContext;
-      const handler = window.webkit?.messageHandlers?.\(audioHandlerName);
-      const post = handler ? handler.postMessage.bind(handler) : null;
-      const encode = window.btoa.bind(window), fromCharCode = String.fromCharCode;
-      const stream = crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2);
+      // Silent unless AppleCam turns this layer's sound on (Layer → Audio). Web Audio stays unavailable either way.
       let sound = false;
-      let layerActive = true;
-      // Media that could not be routed stays muted even with Audio on, so it can never reach the speakers.
-      const unroutable = new WeakSet();
-      const audible = e => sound && !unroutable.has(e);
-      Object.defineProperty(proto, 'muted', {get(){return audible(this) ? muted.get.call(this) : true}, set(v){muted.set.call(this, audible(this) ? !!v : true); updateGain(this)}});
-      Object.defineProperty(proto, 'volume', {get(){return audible(this) ? volume.get.call(this) : 0}, set(v){volume.set.call(this, audible(this) ? v : 0)}});
-      const silence = e => {if (!audible(e)) {muted.set.call(e,true); volume.set.call(e,0); e.defaultMuted=true; updateGain(e)}};
-
-      // Capture. The element's volume reaches the graph by itself; its muted state does not, so a gain node per element applies it.
-      const notes = new Set();
-      const note = body => { const key = JSON.stringify(body); if (post && !notes.has(key)) { notes.add(key); post(body) } };
-      const worklet = `registerProcessor('applecam-capture-v1', class extends AudioWorkletProcessor {
-        constructor() { super(); this.size = 2048; this.data = new Float32Array(this.size * 2); this.n = 0; this.t = 0; }
-        process(inputs) {
-          const input = inputs[0] || [], left = input[0], right = input[1] || left, count = left ? left.length : 128;
-          for (let i = 0; i < count; i++) {
-            if (this.n === 0) this.t = currentTime + i / sampleRate;
-            this.data[this.n * 2] = left ? left[i] : 0; this.data[this.n * 2 + 1] = right ? right[i] : 0;
-            if (++this.n === this.size) { this.port.postMessage({t: this.t, d: this.data}, [this.data.buffer]); this.data = new Float32Array(this.size * 2); this.n = 0; }
-          }
-          return true;
-        }
-      });`;
-      const base64 = data => {
-        const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength); let text = '';
-        for (let i = 0; i < bytes.length; i += 0x2000) text += fromCharCode.apply(null, bytes.subarray(i, i + 0x2000));
-        return encode(text);
-      };
-      let capture = null;
-      const routed = new WeakMap();
-      const resume = () => { if (capture && layerActive && capture.ctx.state !== 'running') capture.ctx.resume().catch(() => {}) };
-      const ensureCapture = () => {
-        if (capture) return capture;
-        if (!NativeContext || !post) throw new Error('capture unavailable');
-        const ctx = new NativeContext(), input = ctx.createGain();
-        capture = {ctx, input};
-        ctx.onstatechange = resume;
-        ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([worklet], {type: 'text/javascript'}))).then(() => {
-          const node = new AudioWorkletNode(ctx, 'applecam-capture-v1', {numberOfOutputs: 0});
-          input.connect(node);
-          node.port.onmessage = ({data}) => {
-            if (!sound) return;
-            const ts = ctx.getOutputTimestamp();
-            if (!ts.performanceTime) return;
-            post({s: stream, t: performance.timeOrigin + ts.performanceTime + (data.t - ts.contextTime) * 1000, r: ctx.sampleRate, d: base64(data.d)});
-          };
-        }, () => note({note: 'unavailable'}));
-        resume();
-        return capture;
-      };
-      const checkOrigin = e => {
-        let url; try { url = new URL(e.currentSrc, location.href) } catch { return }
-        if (!e.currentSrc || url.protocol === 'blob:' || url.protocol === 'data:' || url.origin === location.origin || e.crossOrigin !== null) return;
-        // The browser hands Web Audio only silence for another site's media that does not allow sharing.
-        note({note: 'blocked', host: url.host});
-      };
-      const updateGain = e => { const gain = routed.get(e); if (gain) gain.gain.value = muted.get.call(e) ? 0 : 1 };
-      const route = e => {
-        if (routed.has(e) || unroutable.has(e)) return;
-        try {
-          const c = ensureCapture(), gain = c.ctx.createGain();
-          c.ctx.createMediaElementSource(e).connect(gain); gain.connect(c.input);
-          routed.set(e, gain); updateGain(e); resume();
-          e.addEventListener('loadedmetadata', () => checkOrigin(e)); checkOrigin(e);
-        } catch { unroutable.add(e); silence(e); note({note: 'unavailable'}) }
-      };
-
+      Object.defineProperty(proto, 'muted', {get(){return sound ? muted.get.call(this) : true}, set(v){muted.set.call(this, sound ? !!v : true)}});
+      Object.defineProperty(proto, 'volume', {get(){return sound ? volume.get.call(this) : 0}, set(v){volume.set.call(this, sound ? v : 0)}});
+      const silence = e => {if (!sound) {muted.set.call(e,true); volume.set.call(e,0); e.defaultMuted=true}};
       const soundMessage = 'com.vanguardsignals.AppleCam.layer-sound-v1';
       const tellFrame = target => target?.postMessage({type:soundMessage,sound},'*');
       window.__appleCamSetSound = value => {
         sound = !!value;
         for (const frame of document.querySelectorAll('iframe')) tellFrame(frame.contentWindow);
         document.querySelectorAll('video,audio').forEach(e => {
-          if (sound) route(e);
-          if (audible(e)) {muted.set.call(e,false); volume.set.call(e,1); e.defaultMuted=false; updateGain(e)} else silence(e);
+          if (sound) {muted.set.call(e,false); volume.set.call(e,1); e.defaultMuted=false} else silence(e);
         });
       };
       window.addEventListener('message', event => {
@@ -144,26 +64,20 @@ import WebKit
       });
       // A frame loaded later asks its parent for the current state.
       if (window.parent !== window) window.parent.postMessage({type:soundMessage + '-request'},'*');
+      let layerActive = true;
       const intendedPlayback = new Set();
-      const nativePause = proto.pause, nativePlay = proto.play;
+      const nativePause = proto.pause;
       Object.defineProperty(proto, 'pause', {configurable:true,writable:true,value:function(){
         intendedPlayback.delete(this); return nativePause.call(this);
       }});
-      // Media that is never added to the page (new Audio()) is routed when it starts.
-      Object.defineProperty(proto, 'play', {configurable:true,writable:true,value:function(){
-        if (sound) route(this); silence(this); return nativePlay.call(this);
-      }});
       window.__appleCamSetLayerActive = value => {
-        const reactivated = value && !layerActive;
+        const resume = value && !layerActive;
         layerActive = value;
         for (const frame of document.querySelectorAll('iframe')) {
           frame.contentWindow?.postMessage({type:'com.vanguardsignals.AppleCam.layer-activity-v1',active:value},'*');
         }
-        if (reactivated) {
-          resume();
-          for (const media of intendedPlayback) {
-            if (media.isConnected && media.paused && !media.ended) media.play().catch(() => {});
-          }
+        if (resume) for (const media of intendedPlayback) {
+          if (media.isConnected && media.paused && !media.ended) media.play().catch(() => {});
         }
       };
       window.addEventListener('message', event => {
@@ -189,7 +103,7 @@ import WebKit
       });
       const autoplayRequested = new WeakSet();
       const prepare = e => {
-        if (sound) route(e); silence(e);
+        silence(e);
         if (e.autoplay && !autoplayRequested.has(e)) {
           autoplayRequested.add(e);
           // Programmatic playback preserves the page's autoplay intent when the rendering window is obscured.
@@ -203,9 +117,9 @@ import WebKit
         document.querySelectorAll('video,audio').forEach(prepare);
       };
       new MutationObserver(apply).observe(document,{childList:true,subtree:true});
-      document.addEventListener('play',e=>{if(e.target instanceof HTMLMediaElement){if(sound)route(e.target);silence(e.target);resume()}},true);
-      document.addEventListener('volumechange',e=>{if(!(e.target instanceof HTMLMediaElement))return;updateGain(e.target);if(!audible(e.target) && (!muted.get.call(e.target)||volume.get.call(e.target)!==0))silence(e.target)},true);
-      // The page's own Web Audio is unavailable in browser layers: its output cannot be kept off the speakers.
+      document.addEventListener('play',e=>{if(e.target instanceof HTMLMediaElement)silence(e.target)},true);
+      document.addEventListener('volumechange',e=>{if(!sound && e.target instanceof HTMLMediaElement && (!muted.get.call(e.target)||volume.get.call(e.target)!==0))silence(e.target)},true);
+      // Web Audio is unavailable in browser layers: a layer with Audio off could not keep it silent.
       for (const key of ['AudioContext','webkitAudioContext']) {
         if (window[key]) Object.defineProperty(window,key,{value:class {constructor(){throw new DOMException('Audio is disabled in AppleCam browser layers','NotSupportedError')}},writable:false,configurable:false});
       }
@@ -221,14 +135,12 @@ import WebKit
         config.preferences.inactiveSchedulingPolicy = .none
         config.websiteDataStore = .default()
         config.userContentController.addUserScript(WKUserScript(source: Self.silenceScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
-        config.userContentController.add(audioHandler, name: Self.audioHandlerName)
         webView = WKWebView(frame: CGRect(x: 0, y: 0, width: settings.width, height: settings.height), configuration: config)
         window = BrowserRenderingWindow(contentRect: webView.frame, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "AppleCam Browser — \(name)"; window.isReleasedWhenClosed = false
         window.contentView = webView
         super.init()
         park()
-        audioHandler.owner = self
         window.delegate = self; webView.navigationDelegate = self; webView.uiDelegate = self
         historyObservations = [\WKWebView.canGoBack, \WKWebView.canGoForward].map { path in
             webView.observe(path) { [weak self] _, _ in Task { @MainActor in self?.onStateChange?() } }
@@ -307,60 +219,22 @@ import WebKit
     func reload() { errors.set(nil); webView.reload() }
     func close() {
         historyObservations.removeAll(); onStateChange = nil
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: Self.audioHandlerName)
-        audioHandler.owner = nil; resetStreams()
         webView.stopLoading(); window.delegate = nil; window.orderOut(nil); window.close()
     }
     nonisolated func image(at hostTime: CMTime) throws -> CIImage? { try errors.check(); return pixels.image(at: hostTime.seconds) }
+    /// How old the page picture is when it is composed (see `BrowserFrameStore.pictureAge`).
+    nonisolated var pictureAge: Double { pixels.pictureAge }
     /// Closing the interactive window parks it: the layer still needs the page.
     func windowShouldClose(_ sender: NSWindow) -> Bool { park(); return false }
-    /// Turns the page's sound on or off.
-    private func setSound(_ enabled: Bool) {
+    /// Turns the page's sound on or off (Layer → Audio).
+    func setSound(_ enabled: Bool) {
         guard enabled != soundEnabled else { return }
         soundEnabled = enabled; applySound()
-    }
-    /// A block of page sound or a note from the page script. The page is untrusted; `PageAudioPacket` checks it.
-    fileprivate func received(_ body: Any) {
-        if let note = PageAudioNote.parse(body) {
-            guard note != pageNote else { return }
-            pageNote = note
-            if audioChannel != nil { audioReport?(.note(note)) }
-            return
-        }
-        guard let channel = audioChannel else { return }
-        let wallNow = Date().timeIntervalSince1970 * 1000, hostNow = CMClockGetTime(CMClockGetHostTimeClock()).seconds
-        guard let packet = PageAudioPacket(body: body, wallNow: wallNow),
-              let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: packet.sampleRate, channels: 2, interleaved: true),
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(packet.frames)),
-              let data = buffer.floatChannelData else { return }
-        buffer.frameLength = AVAudioFrameCount(packet.frames)
-        packet.samples.withUnsafeBufferPointer { data[0].update(from: $0.baseAddress!, count: $0.count) }
-        let delay = min(pixels.pictureAge, AudioFormat.latency * 0.8)
-        input(for: packet.stream, channel: channel, at: hostNow).write(buffer, hostTime: packet.hostTime(hostNow: hostNow, wallNow: wallNow) + delay)
-    }
-    private func input(for stream: String, channel: MixChannel, at now: Double) -> ChannelInput {
-        if let existing = pageStreams[stream] { pageStreams[stream]?.lastSeen = now; return existing.input }
-        // A page that keeps opening frames cannot grow the channel without bound: the longest-silent stream goes.
-        if pageStreams.count >= Self.maximumStreams, let oldest = pageStreams.min(by: { $0.value.lastSeen < $1.value.lastSeen }) {
-            oldest.value.input.attach(nil); channel.timeline.forget(stream: oldest.value.input.stream); pageStreams[oldest.key] = nil
-        }
-        let input = ChannelInput(stream: nextStream); nextStream += 1
-        input.attach(channel); pageStreams[stream] = (input, now)
-        return input
-    }
-    private func resetStreams() {
-        for (_, entry) in pageStreams { entry.input.attach(nil); audioChannel?.timeline.forget(stream: entry.input.stream) }
-        pageStreams = [:]
     }
     private func applySound() {
         webView.evaluateJavaScript("if(window.__appleCamSetSound)window.__appleCamSetSound(\(soundEnabled))", completionHandler: nil)
     }
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        // A new page: its frames start new streams, and an earlier page's note no longer applies.
-        resetStreams()
-        if pageNote != nil { pageNote = nil; if audioChannel != nil { audioReport?(.note(nil)) } }
-        if soundEnabled { applySound() }
-    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { if soundEnabled { applySound() } }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if soundEnabled { applySound() }
         let value = active ? "true" : "false"
@@ -445,22 +319,4 @@ final class BrowserFrameStore: @unchecked Sendable {
     /// Smoothed age of the page picture when it is composed: snapshots take time and the newest one is shown until the
     /// next arrives. The page's sound is delayed by this so it lines up with the picture.
     var pictureAge: Double { lock.withLock { age } }
-}
-
-extension BrowserSceneSource: AudioCapableSource {
-    /// Layer → Audio: the page's media sound goes into `channel` (it never plays through the speakers either way).
-    func setAudioChannel(_ channel: MixChannel?, report: @escaping @MainActor (AudioReport) -> Void) {
-        if channel !== audioChannel { resetStreams() }
-        audioChannel = channel; audioReport = channel == nil ? nil : report
-        setSound(channel != nil)
-        if channel != nil { report(.note(pageNote)) }
-    }
-}
-
-/// Receives the page script's messages; held weakly so the web view's content controller does not keep the source alive.
-@MainActor private final class PageAudioHandler: NSObject, WKScriptMessageHandler {
-    weak var owner: BrowserSceneSource?
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        owner?.received(message.body)
-    }
 }

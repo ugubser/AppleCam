@@ -95,10 +95,10 @@ import AppleCamCore
         model.scenes[0].layers += [layer, page]
         model.setLayerAudio(layer.id, enabled: true); model.setLayerAudio(page.id, enabled: true)
         XCTAssertTrue(model.scenes[0].layers.first { $0.id == layer.id }!.hasAudio)
-        XCTAssertEqual(model.mixerRows.map(\.name), ["Clip", "Page"], "Each browser layer is its own channel")
-        XCTAssertEqual(model.recordedChannels().map(\.id), [layer.id.uuidString, page.id.uuidString])
-        model.setMix(page.id.uuidString) { $0.muted = true }
-        XCTAssertEqual(model.scenes[0].layers.first { $0.id == page.id }!.audio?.mix.muted, true)
+        XCTAssertEqual(model.mixerRows.map(\.name), ["Clip", "Browser pages"], "Browser layers share one channel")
+        XCTAssertEqual(model.recordedChannels().map(\.id), [layer.id.uuidString, "browser"])
+        model.setMix("browser") { $0.muted = true }
+        XCTAssertTrue(model.audio.browser.muted)
         model.setMix(layer.id.uuidString) { $0.volume = -12 }
         XCTAssertEqual(model.scenes[0].layers.first { $0.id == layer.id }!.audio?.mix.volume, -12)
         model.setMix(layer.id.uuidString) { $0.volume = 40 }
