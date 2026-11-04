@@ -64,6 +64,12 @@ import ScreenCaptureKit
     private(set) var restorationFailed = false
     let extensionManager = ExtensionManager()
     @ObservationIgnored private let preferencesStore: PreferencesStore
+    @ObservationIgnored private let thumbnailStore: SceneThumbnailStore
+    /// Scene pictures not yet written, and when each scene's picture was last written (system uptime).
+    @ObservationIgnored private var unsavedThumbnails: Set<UUID> = []
+    @ObservationIgnored private var thumbnailWritten: [UUID: TimeInterval] = [:]
+    /// Pictures arrive every 0.5 s while running; writing one per scene every few seconds is plenty.
+    static let thumbnailSaveInterval: TimeInterval = 5
     @ObservationIgnored private var preferences = SavedPreferences()
     @ObservationIgnored private let runtime: SceneRuntime
     /// An open in-app window/screen chooser. The sheet completes it with `finishCaptureChoice`.
@@ -112,6 +118,7 @@ import ScreenCaptureKit
     var canStop: Bool { running || busy }
     init(preferencesStore: PreferencesStore = PreferencesStore()) {
         self.preferencesStore = preferencesStore; runtime = SceneRuntime(store: preferencesStore)
+        thumbnailStore = SceneThumbnailStore(preferences: preferencesStore)
         runtime.onSourceStateChange = { [weak self] in self?.sourceRevision += 1 }
         runtime.output.onPublishing = { [weak self] enabled, event in
             Task { @MainActor in guard let self, event == self.runtime.eventID else { return }; self.publishing = enabled }
@@ -121,7 +128,7 @@ import ScreenCaptureKit
                 guard let self, event == self.runtime.eventID else { return }
                 self.status = text; self.running = active; self.busy = false
                 if !active {
-                    self.clearPreview(); self.sampling = false; self.samplePending = false
+                    self.saveThumbnails(); self.clearPreview(); self.sampling = false; self.samplePending = false
                     self.previewMailbox.invalidate(); self.stopRateTimer()
                     self.requestID += 1; self.runtime.invalidateEvents()
                     let request = self.requestID, previous = self.sceneTask
@@ -140,7 +147,7 @@ import ScreenCaptureKit
             guard let ticket = mailbox.offer(PreviewFrame(buffer: buffer, thumbnail: thumbnail, scene: sceneID, event: event)) else { return }
             Task { @MainActor in
                 guard let self, let newest = mailbox.take(ticket: ticket), newest.event == self.runtime.eventID, self.running || self.busy else { return }
-                if let thumbnail = newest.thumbnail { self.sceneThumbnails[newest.scene] = thumbnail }
+                if let thumbnail = newest.thumbnail { self.sceneThumbnails[newest.scene] = thumbnail; self.thumbnailArrived(newest.scene) }
                 guard newest.scene == self.activeScene.id else { return }
                 do { try self.previewDisplay.show(newest.buffer) } catch { self.status = error.localizedDescription; return }
                 if !self.showingPreview { self.showingPreview = true }
@@ -162,7 +169,23 @@ import ScreenCaptureKit
         }
         NotificationCenter.default.addObserver(self, selector: #selector(flushPreferences), name: NSApplication.willTerminateNotification, object: nil)
         refresh(); restorePreferences()
+        // After a failed restore the scenes are temporary defaults; loading would delete the saved scenes' pictures.
+        if !restorationFailed { sceneThumbnails = thumbnailStore.load(scenes: scenes.map(\.id)) }
         selectedLayerID = activeScene.layers.first?.id
+    }
+    func thumbnailArrived(_ scene: UUID) {
+        unsavedThumbnails.insert(scene)
+        if ProcessInfo.processInfo.systemUptime - (thumbnailWritten[scene] ?? -.infinity) >= Self.thumbnailSaveInterval { saveThumbnails() }
+    }
+    /// Writes the newest picture of every scene that changed since the last write (also on stop and quit).
+    func saveThumbnails() {
+        for scene in unsavedThumbnails {
+            guard let image = sceneThumbnails[scene] else { continue }
+            do { try thumbnailStore.save(image, scene: scene) }
+            catch { settingsError = true; settingsMessage = "The scene picture could not be saved: \(error.localizedDescription)"; return }
+            thumbnailWritten[scene] = ProcessInfo.processInfo.systemUptime
+        }
+        unsavedThumbnails.removeAll()
     }
     deinit { NotificationCenter.default.removeObserver(self) }
     private func clearPreview() { showingPreview = false; previewDisplay.clear() }
@@ -220,6 +243,7 @@ import ScreenCaptureKit
         }
     }
     @objc func flushPreferences() {
+        saveThumbnails()
         guard saveTask != nil else { return }
         writePreferences()
     }
@@ -258,6 +282,16 @@ import ScreenCaptureKit
         guard !running, !busy, next.isValid else { return false }
         outputConfiguration = next; return true
     }
+    /// Apple video effects for the webcam inside AppleCam (nil for the test pattern or an unavailable format).
+    var webcamEffects: VideoEffects? {
+        selection == "pattern" ? nil : VideoEffects.webcam(cameras.first { $0.uniqueID == selection }, configuration: captureConfiguration)
+    }
+    /// Apple video effects meeting apps get from the AppleCam camera at the canvas size (nil when it is not installed).
+    var canvasEffects: VideoEffects? { VideoEffects.virtualCamera(width: outputConfiguration.width, height: outputConfiguration.height) }
+    /// macOS shows the Video Effects menu for an app that is capturing a camera.
+    var canShowVideoEffects: Bool { running && selection != "pattern" && activeScene.needsCamera }
+    var effectsDisturbKeying: Bool { (useGreenScreen || useBackgroundMask) && VideoEffects.changesBackgroundInAppleCam }
+    func showVideoEffects() { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
     var canvasSizeOffered: Bool { CameraContract.offersCanvas(width: outputConfiguration.width, height: outputConfiguration.height) }
     static func unofferedCanvasMessage(_ c: CaptureConfiguration) -> String {
         "The AppleCam camera does not offer a \(c.resolution) canvas. Choose a size under Output → Canvas output."
