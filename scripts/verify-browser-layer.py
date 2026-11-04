@@ -30,7 +30,8 @@ with tempfile.TemporaryDirectory(prefix="applecam-browser-") as temporary:
     executable = app / "Contents/MacOS/BrowserLayerHarness"
     executable.parent.mkdir(parents=True, exist_ok=True)
     (app / "Contents/Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "com.vanguardsignals.AppleCam.BrowserLayerHarness", "CFBundleExecutable": executable.name, "CFBundlePackageType": "APPL", "CFBundleName": "AppleCam Browser Verification", "LSMinimumSystemVersion": "15.2"}))
-    sources = [*sorted((ROOT / "Shared").glob("*.swift")), ROOT / "AppleCam/Processing/GreenScreenProcessor.swift", ROOT / "AppleCam/Scenes/SceneMediaSource.swift", ROOT / "AppleCam/Scenes/BrowserSceneSource.swift", ROOT / "Tests/Integration/BrowserLayerHarness.swift"]
+    sources = [*sorted((ROOT / "Shared").glob("*.swift")), ROOT / "AppleCam/Processing/GreenScreenProcessor.swift", ROOT / "AppleCam/Scenes/SceneMediaSource.swift", ROOT / "AppleCam/Scenes/BrowserSceneSource.swift", ROOT / "AppleCam/Scenes/CaptureSelection.swift",
+               *sorted((ROOT / "AppleCam/Audio").glob("*.swift")), *sorted((ROOT / "AppleCam/Recording").glob("*.swift")), ROOT / "Tests/Integration/BrowserLayerHarness.swift"]
     subprocess.run(["swiftc", "-parse-as-library", "-target", "arm64-apple-macos15.2", *map(str, sources), "-o", str(executable)], cwd=ROOT, check=True)
     address = f"http://127.0.0.1:{server.server_port}/index.html"
     try:

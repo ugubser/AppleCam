@@ -33,6 +33,18 @@ import UniformTypeIdentifiers
                         print("Video state:", try await source.webView.evaluateJavaScript("JSON.stringify({ready:document.querySelector('video').readyState,paused:document.querySelector('video').paused,time:document.querySelector('video').currentTime})") ?? "none")
                         throw CameraError.message("Changing video pixels or silent playback were not verified.")
                     }
+                    // Layer → Audio on: the page's media becomes audible and the page may change its own volume; off: silent again.
+                    let state = "JSON.stringify({muted:document.querySelector('video').muted,volume:document.querySelector('video').volume})"
+                    source.setSound(true); try await Task.sleep(nanoseconds: 200_000_000)
+                    let audible = try await source.webView.evaluateJavaScript(state) as? String
+                    _ = try await source.webView.evaluateJavaScript("document.querySelector('video').volume = 0.5")
+                    let pageVolume = try await source.webView.evaluateJavaScript("document.querySelector('video').volume") as? Double
+                    source.setSound(false); try await Task.sleep(nanoseconds: 200_000_000)
+                    let silentAgain = try await source.webView.evaluateJavaScript(state) as? String
+                    print("Sound on: \(audible ?? "?"), page volume \(pageVolume ?? -1); sound off: \(silentAgain ?? "?")")
+                    guard audible == #"{"muted":false,"volume":1}"#, pageVolume == 0.5, silentAgain == #"{"muted":true,"volume":0}"# else {
+                        throw CameraError.message("Switching the page's sound on and off was not verified.")
+                    }
                     await source.deactivate()
                     let paused = try await source.webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
                     try await Task.sleep(nanoseconds: 300_000_000)
@@ -59,7 +71,7 @@ import UniformTypeIdentifiers
                     let userPosition = try await source.webView.evaluateJavaScript("document.querySelector('video').currentTime") as! Double
                     guard stillPaused == true, abs(userPosition - userPaused) < 0.1 else { throw CameraError.message("An explicit user pause was not preserved.") }
                     await source.deactivate(); source.close()
-                    print("Browser video capture (including an obscured source window), silence, pause/resume and explicit user-pause preservation passed.")
+                    print("Browser video capture (including an obscured source window), silence, sound switching, pause/resume and explicit user-pause preservation passed.")
                     exit(0)
                 } catch { await source.deactivate(); source.close(); throw error }
             } catch { print("Browser layer integration failed: \(error)"); exit(1) }

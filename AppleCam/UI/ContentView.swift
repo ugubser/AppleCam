@@ -48,8 +48,15 @@ private struct OutputToolbar: ToolbarContent {
             Button { model.start(publish: true) } label: { Label("Send to AppleCam", systemImage: "video.badge.checkmark") }
                 .disabled(!model.canSend).help("Send the scene to the AppleCam virtual camera (⇧⌘R)")
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+            Button { model.toggleRecording() } label: {
+                Label(model.recording == nil ? "Record" : "Stop Recording", systemImage: model.recording == nil ? "record.circle" : "stop.circle.fill")
+            }
+            .tint(.red).foregroundStyle(model.recording == nil ? Color.primary : Color.red)
+            .disabled(model.recording == nil && !model.canRecord)
+            .help(model.recording == nil ? "Record the canvas and the audio mix to a movie (⌥⌘R). Starts a local preview when nothing is running." : "Stop recording and save the file (⌥⌘R)")
+            .keyboardShortcut("r", modifiers: [.command, .option])
             Button(role: .destructive) { model.stop() } label: { Label("Stop", systemImage: "stop.fill") }
-                .disabled(!model.canStop).help("Stop capture and sending (⌘.)")
+                .disabled(!model.canStop).help("Stop capture, sending and recording (⌘.)")
                 .keyboardShortcut(".", modifiers: .command)
         }
         ToolbarItem(placement: .primaryAction) {
@@ -61,6 +68,7 @@ private struct OutputToolbar: ToolbarContent {
 
 private struct CanvasPane: View {
     let model: CameraModel
+    @SceneStorage("mixerExpanded") private var mixerExpanded = true
     var body: some View {
         VStack(spacing: 0) {
             SceneCanvas(model: model)
@@ -69,6 +77,8 @@ private struct CanvasPane: View {
                 .shadow(radius: 2)
                 .padding(20)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            MixerStrip(model: model, expanded: $mixerExpanded)
             Divider()
             StatusBar(model: model)
         }
@@ -90,6 +100,14 @@ private struct StatusBar: View {
             }.fixedSize()
             // Plain, single-line text: selectable (AppKit-backed) or wrapping text changes this split pane's minimum
             // size during layout, which makes AppKit abort with an endless constraint-update loop.
+            if let recording = model.recording {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Label("REC \(RecordingPolicy.durationLabel(context.date.timeIntervalSince(recording.started))) · \(ByteCountFormatter.string(fromByteCount: recording.bytes, countStyle: .file))",
+                          systemImage: "record.circle.fill")
+                        .font(.callout.monospacedDigit().weight(.semibold)).foregroundStyle(.red).lineLimit(1).fixedSize()
+                }
+                .help("Recording to “\(recording.name)”")
+            }
             Text(model.status).font(.callout).lineLimit(1).truncationMode(.tail)
                 .help(model.status).frame(maxWidth: .infinity, alignment: .leading)
                 .contextMenu { Button("Copy Status") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(model.status, forType: .string) } }

@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .target(name: "AppleCamCore", path: "Shared"),
         .target(name: "AppleCamMedia", dependencies: ["AppleCamCore"], path: "AppleCam",
-                exclude: ["App/AppleCamApp.swift", "Resources"], sources: ["Capture", "Transport", "Processing", "App/CameraModel.swift", "App/ExtensionManager.swift", "Scenes", "UI"]),
+                exclude: ["App/AppleCamApp.swift", "Resources"], sources: ["Capture", "Transport", "Processing", "App/CameraModel.swift", "App/CameraModel+Recording.swift", "App/CameraModel+Audio.swift", "App/ExtensionManager.swift", "Scenes", "Audio", "Recording", "UI"]),
         .testTarget(name: "AppleCamCoreTests", dependencies: ["AppleCamCore"], path: "Tests/Unit"),
         .testTarget(name: "AppleCamMediaTests", dependencies: ["AppleCamMedia"], path: "Tests/Media")
     ],

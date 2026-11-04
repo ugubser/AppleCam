@@ -19,6 +19,8 @@ import WebKit
     private nonisolated let errors = BrowserFailure()
     private var active = false
     private var mediaSuspended = false
+    /// Whether this page may make sound (Layer → Audio). Every page load starts silent and is switched on again.
+    private var soundEnabled = false
     private var historyObservations: [NSKeyValueObservation] = []
     /// Called on the main actor when back/forward availability changes.
     var onStateChange: (() -> Void)?
@@ -27,9 +29,26 @@ import WebKit
       const proto = HTMLMediaElement.prototype;
       const muted = Object.getOwnPropertyDescriptor(proto, 'muted');
       const volume = Object.getOwnPropertyDescriptor(proto, 'volume');
-      Object.defineProperty(proto, 'muted', {get(){return true}, set(){muted.set.call(this,true)}});
-      Object.defineProperty(proto, 'volume', {get(){return 0}, set(){volume.set.call(this,0)}});
-      const silence = e => {muted.set.call(e,true); volume.set.call(e,0); e.defaultMuted=true};
+      // Silent unless AppleCam turns this layer's sound on (Layer → Audio). Web Audio stays unavailable either way.
+      let sound = false;
+      Object.defineProperty(proto, 'muted', {get(){return sound ? muted.get.call(this) : true}, set(v){muted.set.call(this, sound ? !!v : true)}});
+      Object.defineProperty(proto, 'volume', {get(){return sound ? volume.get.call(this) : 0}, set(v){volume.set.call(this, sound ? v : 0)}});
+      const silence = e => {if (!sound) {muted.set.call(e,true); volume.set.call(e,0); e.defaultMuted=true}};
+      const soundMessage = 'com.vanguardsignals.AppleCam.layer-sound-v1';
+      const tellFrame = target => target?.postMessage({type:soundMessage,sound},'*');
+      window.__appleCamSetSound = value => {
+        sound = !!value;
+        for (const frame of document.querySelectorAll('iframe')) tellFrame(frame.contentWindow);
+        document.querySelectorAll('video,audio').forEach(e => {
+          if (sound) {muted.set.call(e,false); volume.set.call(e,1); e.defaultMuted=false} else silence(e);
+        });
+      };
+      window.addEventListener('message', event => {
+        if (event.data?.type === soundMessage && event.source === window.parent && window.parent !== window) window.__appleCamSetSound(!!event.data.sound);
+        if (event.data?.type === soundMessage + '-request') tellFrame(event.source);
+      });
+      // A frame loaded later asks its parent for the current state.
+      if (window.parent !== window) window.parent.postMessage({type:soundMessage + '-request'},'*');
       let layerActive = true;
       const intendedPlayback = new Set();
       const nativePause = proto.pause;
@@ -84,8 +103,8 @@ import WebKit
       };
       new MutationObserver(apply).observe(document,{childList:true,subtree:true});
       document.addEventListener('play',e=>{if(e.target instanceof HTMLMediaElement)silence(e.target)},true);
-      document.addEventListener('volumechange',e=>{if(e.target instanceof HTMLMediaElement && (!muted.get.call(e.target)||volume.get.call(e.target)!==0))silence(e.target)},true);
-      // Web Audio is intentionally unavailable in silent browser layers.
+      document.addEventListener('volumechange',e=>{if(!sound && e.target instanceof HTMLMediaElement && (!muted.get.call(e.target)||volume.get.call(e.target)!==0))silence(e.target)},true);
+      // Web Audio is intentionally unavailable in browser layers: it cannot be silenced per page.
       for (const key of ['AudioContext','webkitAudioContext']) {
         if (window[key]) Object.defineProperty(window,key,{value:class {constructor(){throw new DOMException('Audio is disabled in AppleCam browser layers','NotSupportedError')}},writable:false,configurable:false});
       }
@@ -162,7 +181,17 @@ import WebKit
     }
     nonisolated func image(at hostTime: CMTime) throws -> CIImage? { try errors.check(); return pixels.image(at: hostTime.seconds) }
     func windowShouldClose(_ sender: NSWindow) -> Bool { sender.orderBack(nil); return false }
+    /// Turns the page's sound on or off; the shared browser-pages channel captures it.
+    func setSound(_ enabled: Bool) {
+        guard enabled != soundEnabled else { return }
+        soundEnabled = enabled; applySound()
+    }
+    private func applySound() {
+        webView.evaluateJavaScript("if(window.__appleCamSetSound)window.__appleCamSetSound(\(soundEnabled))", completionHandler: nil)
+    }
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) { if soundEnabled { applySound() } }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if soundEnabled { applySound() }
         let value = active ? "true" : "false"
         webView.evaluateJavaScript("if(window.__appleCamSetLayerActive)window.__appleCamSetLayerActive(\(value))", completionHandler: nil)
     }

@@ -90,6 +90,7 @@ private struct LayerSections: View {
         }
         .disabled(layer.locked)
         Section("Source") { SourceControls(model: model, layer: layer) }
+        if layer.source.canHaveAudio { LayerAudioSection(model: model, layer: layer) }
         Section {
             Button("Delete Layer", role: .destructive) { model.deleteLayer(layer.id) }.disabled(layer.locked)
         }
@@ -419,6 +420,7 @@ private struct OutputInspector: View {
                 }.font(.caption).foregroundStyle(.secondary)
             }
             .disabled(locked)
+            RecordingSection(model: model)
             Section {
                 LabeledContent("In meeting apps") {
                     Text(VideoEffects.summary(model.canvasEffects, size: model.outputConfiguration.resolution,

@@ -34,6 +34,8 @@ public struct SavedPreferences: Codable, Equatable, Sendable {
     public var scenes = CameraScene.defaults()
     public var selectedScene = 0
     public var output = CaptureConfiguration()
+    public var audio = AudioPreferences()
+    public var recording = RecordingPreferences()
     /// Every private file the settings refer to: scene media and each camera's background picture.
     public var mediaReferences: Set<MediaAsset> {
         Set(scenes.flatMap(\.layers).compactMap { $0.source.asset } + profiles.values.compactMap { $0.mask.plate?.asset })
@@ -52,14 +54,14 @@ public struct SavedPreferences: Codable, Equatable, Sendable {
     public var imageReferences: Set<SavedBackground> { profiles.values.reduce(into: []) { $0.formUnion($1.imageReferences) } }
     public func validate() throws {
         guard version == 3 else { throw CameraError.message("Saved settings use an unsupported version.") }
-        guard scenes.count == 4, scenes.allSatisfy(\.isValid), (0..<4).contains(selectedScene), output.isValid,
+        guard scenes.count == 4, scenes.allSatisfy(\.isValid), (0..<4).contains(selectedScene), output.isValid, audio.isValid,
               Set(scenes.map(\.id)).count == 4,
               Set(scenes.flatMap(\.layers).map(\.id)).count == scenes.flatMap(\.layers).count,
               !cameraID.isEmpty, profiles.keys.allSatisfy({ !$0.isEmpty }), profiles.values.allSatisfy(\.isValid) else {
             throw CameraError.message("Saved settings are invalid.")
         }
     }
-    private enum CodingKeys: String, CodingKey { case version, cameraID, profiles, cameraName, greenScreen, preview, key, background, scenes, selectedScene, output }
+    private enum CodingKeys: String, CodingKey { case version, cameraID, profiles, cameraName, greenScreen, preview, key, background, scenes, selectedScene, output, audio, recording }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let schema = try c.decode(Int.self, forKey: .version)
@@ -88,6 +90,9 @@ public struct SavedPreferences: Codable, Equatable, Sendable {
             }
             migrateScenes()
         }
+        // Added in build 22; absent in earlier version-3 files.
+        audio = try c.decodeIfPresent(AudioPreferences.self, forKey: .audio) ?? AudioPreferences()
+        recording = try c.decodeIfPresent(RecordingPreferences.self, forKey: .recording) ?? RecordingPreferences()
         version = 3
         try validate()
     }
@@ -130,6 +135,7 @@ public struct SavedPreferences: Codable, Equatable, Sendable {
         try c.encode(profiles, forKey: .profiles)
         try c.encode(scenes, forKey: .scenes); try c.encode(selectedScene, forKey: .selectedScene)
         try c.encode(output, forKey: .output)
+        try c.encode(audio, forKey: .audio); try c.encode(recording, forKey: .recording)
     }
 }
 

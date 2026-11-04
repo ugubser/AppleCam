@@ -12,6 +12,8 @@ final class SceneCompositor {
     private let space = CGColorSpace(name: CGColorSpace.sRGB)!
     private let bounds: CGRect
     private var pool: CVPixelBufferPool?
+    /// Canvas buffers that may be in use at once. Recording raises it: the encoder holds a few frames while it works.
+    var outputBufferLimit = 5
     private var cameraKeyer: GreenScreenProcessor?
     private var maskKeyer: BackgroundMaskProcessor?
     private var keyed: CVPixelBuffer?
@@ -68,7 +70,7 @@ final class SceneCompositor {
         guard let pool else { throw CameraError.message("Scene frame pool is unavailable.") }
         var output: CVPixelBuffer?
         let status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(nil, pool,
-            [kCVPixelBufferPoolAllocationThresholdKey: 5] as CFDictionary, &output)
+            [kCVPixelBufferPoolAllocationThresholdKey: outputBufferLimit] as CFDictionary, &output)
         if status == kCVReturnWouldExceedAllocationThreshold { return nil }
         guard status == kCVReturnSuccess, let output else { throw CameraError.operation("Allocate scene frame", status) }
         context.render(picture.cropped(to: bounds), to: output, bounds: bounds, colorSpace: space)
