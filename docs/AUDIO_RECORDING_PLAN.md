@@ -89,15 +89,18 @@ The PRD currently excludes this work: "The first release excludes … audio proc
 5. Browser audio through a process tap.
 6. Separate channel tracks, offsets and the remaining polish.
 
-## Open questions
+## Owner decisions (4 November 2026)
 
-1. Should the mix also reach meetings as a virtual microphone? macOS needs an Audio Server plug-in for that: an admin-installed driver outside the app sandbox and outside the camera extension. That is a separate, larger project.
-2. Should the file hold only the mixed stereo track, or the mix plus one track per channel for later editing?
-3. Which format: HEVC `.mov` (small, Apple-friendly), H.264 `.mp4` (widest compatibility) or ProRes (editing quality, very large)?
-4. When scenes switch, should a layer's audio follow its scene, or should chosen channels always stay on?
-5. Should a meeting app's sound (other participants) ever be recordable? That raises consent questions; the proposal excludes the meeting app from screen audio by default.
-6. If a source fails mid-recording, should the recording stop (current project rule), or continue with that channel silent and marked?
-7. Should Record start a preview automatically, and can recording be paused?
-8. Should the mixer be a strip under the canvas, an "Audio" inspector tab, or a separate window?
-9. Should browser pages, clips and windows be audible locally while recording, or captured silently with optional headphone monitoring?
-10. Should Apple's microphone modes (Voice Isolation, Wide Spectrum) be offered, or should the raw microphone be recorded?
+All ten open questions were answered on 4 November 2026.
+
+- **Meetings:** recordings only in this pull request. Design the mixer so its output can later feed a separate virtual-microphone project; that virtual microphone is not built here.
+- **Tracks:** the stereo mix as track 1, plus one track per recorded channel.
+- **Format:** HEVC in QuickTime `.mov`.
+- **Source failure:** a source that fails during a recording stops the recording, keeps the file written up to that point, and explains the failure. There is no silent fallback.
+- **Scenes:** a layer's audio is heard only while its scene is live. Microphones are heard in every scene.
+- **Mixer:** a collapsible strip under the canvas.
+- **Monitoring:** sources AppleCam plays itself (browser layers and video clips) are captured without playing through the speakers. A Monitor switch plays the mix on a chosen output, such as headphones. Another app's sound, captured through a window or screen layer, still plays as that app normally would, because AppleCam cannot mute other apps.
+- **Meeting audio:** never recorded. **Proposed rule:** captured window and screen audio excludes every other process that is currently using audio input (Core Audio's per-process input state), since that is what a meeting app or a browser in a call does. This also excludes, for example, all of Chrome while a Meet tab is in a call; the mixer says so.
+- **Record button:** starts the scene preview if nothing is running. Stopping produces one complete file; there is no pause.
+- **Microphone mode:** the mode chosen in Control Center for AppleCam applies (Voice Isolation, Wide Spectrum or Standard), and the mixer shows the current mode.
+- **Save location:** the first recording asks for a folder, suggesting Movies/AppleCam. Later recordings go there automatically, and the folder can be changed under Output.
