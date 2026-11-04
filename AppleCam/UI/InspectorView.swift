@@ -428,16 +428,15 @@ private struct OutputInspector: View {
                     Text(VideoEffects.summary(model.webcamEffects, size: model.captureConfiguration.resolution,
                         unavailable: model.selection == "pattern" ? "No webcam selected" : "This camera does not offer the format"))
                 }
-                Button("Video Effects…") { model.showVideoEffects() }.disabled(!model.canShowVideoEffects)
             } header: {
                 Text("Apple video effects")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if model.effectsDisturbKeying {
-                        Text("Portrait or an Apple background is on for AppleCam's webcam. It changes what is behind you, so the green screen and background mask no longer match. Turn it off in Video Effects.")
+                        Text("Portrait or an Apple background is on for AppleCam's webcam. It changes what is behind you, so the green screen and background mask no longer match. Turn it off in Control Center → Video Effects.")
                             .foregroundStyle(.orange)
                     }
-                    Text("Reactions, Portrait, Studio Light and backgrounds are offered by macOS only for smaller formats, usually 1920 × 1080 and below. In a meeting, choose them in Control Center → Video Effects while the meeting app uses the AppleCam camera; they then apply to the whole scene. Video Effects… sets them for the webcam inside AppleCam while a webcam scene runs.")
+                    Text("Reactions, Portrait, Studio Light and backgrounds are offered by macOS only for smaller formats, usually 1920 × 1080 and below. In a meeting, choose them in Control Center → Video Effects while the meeting app uses the AppleCam camera; they then apply to the whole scene.")
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Section {

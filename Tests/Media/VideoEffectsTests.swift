@@ -17,12 +17,11 @@ final class VideoEffectsTests: XCTestCase {
     func testVirtualCameraReportsNothingForASizeItDoesNotOffer() {
         XCTAssertNil(VideoEffects.virtualCamera(width: 4092, height: 2160))
     }
-    @MainActor func testTestPatternHasNoWebcamEffectsAndNoEffectsMenu() throws {
+    @MainActor func testTestPatternHasNoWebcamEffects() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let model = CameraModel(preferencesStore: PreferencesStore(directory: directory))
         model.selection = "pattern"
         XCTAssertNil(model.webcamEffects)
-        XCTAssertFalse(model.canShowVideoEffects, "The Video Effects menu needs a running webcam scene")
     }
 }

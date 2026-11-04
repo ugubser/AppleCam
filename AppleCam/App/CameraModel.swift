@@ -288,10 +288,7 @@ import ScreenCaptureKit
     }
     /// Apple video effects meeting apps get from the AppleCam camera at the canvas size (nil when it is not installed).
     var canvasEffects: VideoEffects? { VideoEffects.virtualCamera(width: outputConfiguration.width, height: outputConfiguration.height) }
-    /// macOS shows the Video Effects menu for an app that is capturing a camera.
-    var canShowVideoEffects: Bool { running && selection != "pattern" && activeScene.needsCamera }
     var effectsDisturbKeying: Bool { (useGreenScreen || useBackgroundMask) && VideoEffects.changesBackgroundInAppleCam }
-    func showVideoEffects() { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
     var canvasSizeOffered: Bool { CameraContract.offersCanvas(width: outputConfiguration.width, height: outputConfiguration.height) }
     static func unofferedCanvasMessage(_ c: CaptureConfiguration) -> String {
         "The AppleCam camera does not offer a \(c.resolution) canvas. Choose a size under Output → Canvas output."
