@@ -25,12 +25,17 @@ final class MixChannel: @unchecked Sendable {
     private var extraDelay: Double = 0
     fileprivate var appliedGain: Float = 0
     fileprivate var meter = LevelMeter()
-    init(id: String, name: String, mix: ChannelMix, active: Bool) { self.id = id; self.name = name; self.mix = mix; self.active = active }
+    /// Microphones belong with the webcam picture, which is older than the frame it is composed into; only they are
+    /// delayed by that age. Layer sound belongs with its own layer's picture.
+    let followsCamera: Bool
+    init(id: String, name: String, mix: ChannelMix, active: Bool, followsCamera: Bool = false) {
+        self.id = id; self.name = name; self.mix = mix; self.active = active; self.followsCamera = followsCamera
+    }
     func update(mix: ChannelMix, active: Bool) { lock.withLock { self.mix = mix; self.active = active } }
     fileprivate func begin(epoch: Double) { lock.withLock { self.epoch = epoch }; timeline.restart() }
     fileprivate func end() { lock.withLock { epoch = nil } }
     /// Delay added to every source sample so sound lines up with the (older) camera picture in the same frame.
-    fileprivate func setVideoDelay(_ seconds: Double) { lock.withLock { extraDelay = seconds } }
+    fileprivate func setVideoDelay(_ seconds: Double) { lock.withLock { extraDelay = followsCamera ? seconds : 0 } }
     fileprivate var targetGain: Float { lock.withLock { active ? mix.gain : 0 } }
     /// Interleaved stereo float frames captured at `hostTime` (seconds on the host clock).
     func write(_ samples: UnsafeBufferPointer<Float>, hostTime: Double) {
@@ -97,15 +102,16 @@ final class AudioMixer: @unchecked Sendable {
         queue.async { [self] in
             self.master = master
             let old = Dictionary(uniqueKeysWithValues: channels.map { ($0.id, $0) })
-            for channel in next where old[channel.id] !== channel { if let epoch { channel.begin(epoch: epoch) } }
+            for channel in next where old[channel.id] !== channel { if let epoch { channel.begin(epoch: epoch) }; channel.setVideoDelay(videoDelay) }
             for channel in channels where !next.contains(where: { $0 === channel }) { channel.end() }
             channels = next
             buffers = next.map { _ in [Float](repeating: 0, count: AudioFormat.blockFrames * 2) }
         }
     }
+    private var videoDelay: Double = 0
     func setVideoDelay(_ seconds: Double) {
         let clamped = min(max(seconds, 0), AudioFormat.latency * 0.8)
-        queue.async { [self] in channels.forEach { $0.setVideoDelay(clamped) } }
+        queue.async { [self] in videoDelay = clamped; channels.forEach { $0.setVideoDelay(clamped) } }
     }
     /// Starts sending the mix and the given channels (in that order) to `recorder`.
     func attach(_ recorder: SceneRecorder, channels ids: [String]) { queue.async { [self] in self.recorder = recorder; recordedChannels = ids } }

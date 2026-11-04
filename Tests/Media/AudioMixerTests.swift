@@ -114,3 +114,43 @@ final class AudioMixerTests: XCTestCase {
         XCTAssertEqual(list.map(\.name), ["Yeti", "Screen", "Browser pages"], "All browser layers share one channel")
     }
 }
+
+final class MeetingExclusionTests: XCTestCase {
+    private let own: pid_t = 100
+    func testAppsAndTheirHelpersUsingAMicrophoneAreRecognised() {
+        let users = [AudioInputUsers.Process(pid: 7, bundleID: "com.google.Chrome.helper")]
+        XCTAssertTrue(AudioInputUsers.isUsingInput(pid: 3, bundleID: "com.google.Chrome", users: users, own: own), "A helper process counts for its app")
+        XCTAssertFalse(AudioInputUsers.isUsingInput(pid: 4, bundleID: "com.google.ChromeCanary", users: users, own: own), "Only helpers below the app's identifier")
+        XCTAssertTrue(AudioInputUsers.isUsingInput(pid: 7, bundleID: "", users: users, own: own), "Matched by process when there is no identifier")
+        XCTAssertFalse(AudioInputUsers.isUsingInput(pid: own, bundleID: "com.vanguardsignals.AppleCam",
+            users: [.init(pid: own, bundleID: "com.vanguardsignals.AppleCam")], own: own), "AppleCam's own microphones never exclude it")
+    }
+    func testMicrophoneUsersWithoutACapturableAppAreReported() {
+        let users: [AudioInputUsers.Process] = [.init(pid: 1, bundleID: "com.apple.replayd"), .init(pid: 2, bundleID: "us.zoom.xos"),
+                                                .init(pid: 3, bundleID: "com.example.hidden"), .init(pid: own, bundleID: "com.vanguardsignals.AppleCam")]
+        let unmatched = AudioInputUsers.unmatched(users, apps: [(2, "us.zoom.xos")], own: own)
+        XCTAssertEqual(unmatched.map(\.bundleID), ["com.example.hidden"], "Apple services, filterable apps and AppleCam itself are not reported")
+    }
+}
+
+final class CameraDelayTests: XCTestCase {
+    func testOnlyMicrophonesAreDelayedByTheCameraPictureAge() {
+        let mic = MixChannel(id: "mic", name: "Mic", mix: ChannelMix(), active: true, followsCamera: true)
+        let clip = MixChannel(id: "clip", name: "Clip", mix: ChannelMix(), active: true)
+        let mixer = AudioMixer()
+        nonisolated(unsafe) var output: [Float] = []
+        mixer.onMixBlock = { output.append(contentsOf: $0) }
+        mixer.setChannels([mic, clip], master: ChannelMix())
+        mixer.start(at: 100, timer: false)
+        mixer.setVideoDelay(0.05)
+        mixer.queue.sync {}
+        let click = [Float](repeating: 0.5, count: 480 * 2) // 10 ms
+        click.withUnsafeBufferPointer { mic.write($0, hostTime: 100.2); clip.write($0, hostTime: 100.4) }
+        mixer.queue.sync { mixer.tick(now: 100 + 0.8 + AudioFormat.latency) }
+        let left = stride(from: 0, to: output.count, by: 2).map { output[$0] }
+        let onsets = left.indices.filter { $0 > 0 && left[$0] > 0.25 && left[$0 - 1] <= 0.25 }.map { Double($0) / AudioFormat.sampleRate }
+        XCTAssertEqual(onsets.count, 2)
+        XCTAssertEqual(onsets[0], 0.25, accuracy: 0.001, "The microphone is delayed by the 50 ms picture age")
+        XCTAssertEqual(onsets[1], 0.40, accuracy: 0.001, "Layer sound is not")
+    }
+}

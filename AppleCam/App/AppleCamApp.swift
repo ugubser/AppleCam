@@ -30,6 +30,9 @@ struct AppleCamApp: App {
         #endif
         _model = State(initialValue: model)
         AppDelegate.model = model
+        #if DEBUG
+        TestScenario.runIfRequested(model)
+        #endif
     }
     var body: some Scene {
         Window("AppleCam", id: "controls") {

@@ -1,6 +1,6 @@
 # Audio and recording plan
 
-Draft prepared on 4 November 2026 for the `feature/audio-and-recording` pull request. Nothing in this document is implemented yet. Items marked **Proposed** are engineering suggestions awaiting the owner's decision; **Fact** items were checked against the installed macOS SDK or the current code.
+Prepared on 4 November 2026 for the `feature/audio-and-recording` pull request. All six milestones are implemented in build 22; see the architecture section “Recording and audio build 22” and the validation record for what was and was not verified. Two decisions changed during implementation: browser pages form one shared channel, and screen sound pauses (fails closed) when a microphone user cannot be filtered out. Items marked **Proposed** are engineering suggestions awaiting the owner's decision; **Fact** items were checked against the installed macOS SDK or the current code.
 
 ## Scope change
 

@@ -120,6 +120,7 @@ struct ChannelRowView: View {
             }
             .toggleStyle(.button).controlSize(.small).help(row.mix.muted ? "Unmute" : "Mute")
             .accessibilityLabel(row.mix.muted ? "Unmute \(row.name)" : "Mute \(row.name)")
+            if !isMaster { OffsetButton(model: model, row: row) }
             if !isMaster, case .microphone = row.kind {
                 Button { model.removeMicrophone(row.id) } label: { Image(systemName: "minus.circle") }
                     .buttonStyle(.borderless).disabled(!model.canChangeChannels).help("Remove this microphone from the mix")
@@ -128,6 +129,34 @@ struct ChannelRowView: View {
             if model.recording != nil && !isMaster {
                 Image(systemName: "record.circle").foregroundStyle(.red).help("Recorded as its own track")
             }
+        }
+    }
+}
+
+/// Moves a channel in time, for example to line up a Bluetooth microphone that arrives late.
+private struct OffsetButton: View {
+    let model: CameraModel
+    let row: MixerRow
+    @State private var shown = false
+    var body: some View {
+        Button { shown.toggle() } label: {
+            Image(systemName: row.mix.offsetMilliseconds == 0 ? "clock" : "clock.badge.exclamationmark")
+        }
+        .buttonStyle(.borderless).help(row.mix.offsetMilliseconds == 0 ? "Timing" : String(format: "Timing: %+.0f ms", row.mix.offsetMilliseconds))
+        .accessibilityLabel("\(row.name) timing")
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Timing of \(row.name)").font(.headline)
+                HStack {
+                    Slider(value: Binding(get: { row.mix.offsetMilliseconds }, set: { v in model.setMix(row.id) { $0.offsetMilliseconds = v.rounded() } }),
+                           in: ChannelMix.offsetRange, step: 5).frame(width: 220)
+                    Text(String(format: "%+.0f ms", row.mix.offsetMilliseconds)).monospacedDigit().frame(width: 60, alignment: .trailing)
+                }
+                Text("Positive delays this sound; negative plays it earlier. Use it when a channel is out of step with the picture, for example a Bluetooth microphone. Microphones already follow the webcam picture's delay automatically.")
+                    .font(.caption).foregroundStyle(.secondary).frame(width: 300, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                Button("Reset") { model.setMix(row.id) { $0.offsetMilliseconds = 0 } }.disabled(row.mix.offsetMilliseconds == 0)
+            }
+            .padding(14)
         }
     }
 }

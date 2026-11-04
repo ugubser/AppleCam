@@ -29,6 +29,8 @@
 "833F8B3193944887B98C72F9" = { "isa" = "PBXBuildFile"; "fileRef" = "C7E4F507B0BD446C9A312AD3"; };
 "86810BC1FAC140598D0CB310" = { "isa" = "PBXFileReference"; "path" = "AppleCam/UI/MixerStrip.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "3C6359FB42274028B03AFC2E" = { "isa" = "PBXBuildFile"; "fileRef" = "86810BC1FAC140598D0CB310"; };
+"0F774DF182DD44E6821BAC5F" = { "isa" = "PBXFileReference"; "path" = "AppleCam/App/TestScenario.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"523D0A13F0804E9DA2169BF7" = { "isa" = "PBXBuildFile"; "fileRef" = "0F774DF182DD44E6821BAC5F"; };
 "93517269DD914CF3823465F8" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneOutput.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "20A9E94E00AD4653B6FB7EE9" = { "isa" = "PBXBuildFile"; "fileRef" = "93517269DD914CF3823465F8"; };
 "105D96028C7C45B49AF7FB11" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Scenes/SceneMediaSource.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
@@ -192,6 +194,7 @@
 "children" = (
 "6FE54532B4784CEE89BA04ED",
 "93517269DD914CF3823465F8",
+"0F774DF182DD44E6821BAC5F",
 "86810BC1FAC140598D0CB310",
 "C7E4F507B0BD446C9A312AD3",
 "3C9C4964EA7045B7807412F4",
@@ -452,6 +455,7 @@
 "files" = (
 "5C4C94CC54BC451FBA6C3586",
 "20A9E94E00AD4653B6FB7EE9",
+"523D0A13F0804E9DA2169BF7",
 "3C6359FB42274028B03AFC2E",
 "833F8B3193944887B98C72F9",
 "B183E2FDEBDC44F3A81715AE",

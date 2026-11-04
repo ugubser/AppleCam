@@ -162,7 +162,7 @@ protocol AudioCapableSource: AnyObject {
         var wantedMics = Set<String>()
         for mic in audio.microphones {
             let id = AudioChannelID.microphone(mic.deviceID)
-            let channel = channel(id: id, name: mic.name); channel.update(mix: mic.mix, active: true); next.append(channel)
+            let channel = channel(id: id, name: mic.name, followsCamera: true); channel.update(mix: mic.mix, active: true); next.append(channel)
             wantedMics.insert(mic.deviceID)
             if microphones[mic.deviceID] == nil {
                 let capture = MicrophoneCapture(uid: mic.deviceID)
@@ -234,7 +234,7 @@ protocol AudioCapableSource: AnyObject {
         if let pages { self.pages = nil; pages.input.attach(nil); Task { await pages.stop() } }
         mixer.setChannels([], master: ChannelMix())
     }
-    private func channel(id: String, name: String) -> MixChannel {
-        channels[id] ?? MixChannel(id: id, name: name, mix: ChannelMix(), active: false)
+    private func channel(id: String, name: String, followsCamera: Bool = false) -> MixChannel {
+        channels[id] ?? MixChannel(id: id, name: name, mix: ChannelMix(), active: false, followsCamera: followsCamera)
     }
 }
