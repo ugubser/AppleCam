@@ -40,6 +40,18 @@ final class SourceFrameStoreTests: XCTestCase {
         store.end(); store.set(picture, at: 2); XCTAssertNil(store.image(at: 2.01))
         store.begin(); XCTAssertNil(store.image(at: 2.01))
     }
+    /// Page sound is delayed by how old the page picture is when it is composed.
+    func testBrowserPictureAgeIsSmoothedAndResetOnStart() throws {
+        let picture = try XCTUnwrap(CIContext().createCGImage(CIImage(color: .red), from: CGRect(x: 0, y: 0, width: 16, height: 8)))
+        let store = BrowserFrameStore(); store.begin()
+        XCTAssertEqual(store.pictureAge, 0)
+        store.set(picture, at: 1); _ = store.image(at: 1.05)
+        XCTAssertEqual(store.pictureAge, 0.05, accuracy: 1e-9, "The first composed picture sets the age")
+        for i in 0..<200 { let t = 2 + Double(i) * 0.04; store.set(picture, at: t); _ = store.image(at: t + 0.07) }
+        XCTAssertEqual(store.pictureAge, 0.07, accuracy: 0.001)
+        _ = store.image(at: 100); XCTAssertEqual(store.pictureAge, 0.07, accuracy: 0.001, "A stale picture is not composed and does not count")
+        store.end(); store.begin(); XCTAssertEqual(store.pictureAge, 0)
+    }
 }
 
 final class SnapshotFailureWindowTests: XCTestCase {

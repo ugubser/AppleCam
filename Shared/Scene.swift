@@ -67,6 +67,11 @@ public enum LayerSource: Codable, Equatable, Sendable {
     public var asset: MediaAsset? {
         switch self { case .image(let a), .clip(let a): return a; default: return nil }
     }
+    public var isBrowser: Bool { if case .browser = self { return true }; return false }
+    /// Browser pages, windows, screens and clips can make sound; images and the webcam picture cannot.
+    public var canHaveAudio: Bool {
+        switch self { case .clip, .browser, .window, .display: return true; case .camera, .image: return false }
+    }
     public var isValid: Bool {
         switch self {
         case .image(let a), .clip(let a): return a.isValid
@@ -117,7 +122,11 @@ public struct SceneLayer: Codable, Equatable, Identifiable, Sendable {
     public var visible = true
     public var locked = false
     public var placement = LayerPlacement()
+    /// Absent in settings saved before audio existed; treated as off.
+    public var audio: LayerAudio?
     public init(id: UUID = UUID(), name: String, source: LayerSource) { self.id = id; self.name = name; self.source = source }
+    /// True when this layer's sound is captured into the mix.
+    public var hasAudio: Bool { source.canHaveAudio && (audio?.enabled ?? false) }
 }
 
 public struct CameraScene: Codable, Equatable, Identifiable, Sendable {
@@ -131,7 +140,7 @@ public struct CameraScene: Codable, Equatable, Identifiable, Sendable {
     public init(id: UUID = UUID(), name: String, layers: [SceneLayer] = []) { self.id = id; self.name = name; self.layers = layers }
     public var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && Set(layers.map(\.id)).count == layers.count &&
-        layers.allSatisfy { !$0.name.isEmpty && $0.placement.isValid && $0.source.isValid } &&
+        layers.allSatisfy { !$0.name.isEmpty && $0.placement.isValid && $0.source.isValid && ($0.audio?.mix.isValid ?? true) } &&
         [canvasRed, canvasGreen, canvasBlue].allSatisfy { $0.isFinite && (0...1).contains($0) }
     }
     public var needsCamera: Bool { layers.contains { $0.visible && $0.source == .camera } }

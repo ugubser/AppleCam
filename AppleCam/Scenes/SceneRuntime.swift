@@ -90,7 +90,9 @@ struct MissingSceneSource: Error {
             let browser = try await BrowserSceneSource(settings: settings, name: layer.name, fps: fps)
             browser.onStateChange = { [weak self] in self?.onSourceStateChange?() }
             source = browser
-        case .window, .display: source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps)
+        case .window(let reference):
+            source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps, audio: .application(pid: reference?.processID ?? 0, bundleID: reference?.applicationID ?? ""))
+        case .display: source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps, audio: .display)
         case .camera: throw CameraError.message("Webcam frames belong to the shared camera session.")
         }
         if let old = cache[layer.id]?.source, active[layer.id] !== old {
@@ -181,6 +183,8 @@ struct MissingSceneSource: Error {
         let loaded = LoadedPlate(id: saved.asset.id, image: image); plate = loaded; return loaded
     }
     func clip(_ id: UUID) -> ClipSceneSource? { cache[id]?.source as? ClipSceneSource }
+    /// The layer's source, running or cached, if it has been created.
+    func source(_ id: UUID) -> SceneMediaSource? { active[id] ?? cache[id]?.source }
     func browser(_ id: UUID) -> BrowserSceneSource? { cache[id]?.source as? BrowserSceneSource }
     private func startMonitor() {
         guard monitor == nil else { return }

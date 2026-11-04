@@ -63,7 +63,7 @@ import ScreenCaptureKit
     private(set) var sourceRevision = 0
     private(set) var restorationFailed = false
     let extensionManager = ExtensionManager()
-    @ObservationIgnored private let preferencesStore: PreferencesStore
+    @ObservationIgnored let preferencesStore: PreferencesStore
     @ObservationIgnored private let thumbnailStore: SceneThumbnailStore
     /// Scene pictures not yet written, and when each scene's picture was last written (system uptime).
     @ObservationIgnored private var unsavedThumbnails: Set<UUID> = []
@@ -71,7 +71,24 @@ import ScreenCaptureKit
     /// Pictures arrive every 0.5 s while running; writing one per scene every few seconds is plenty.
     static let thumbnailSaveInterval: TimeInterval = 5
     @ObservationIgnored private var preferences = SavedPreferences()
-    @ObservationIgnored private let runtime: SceneRuntime
+    @ObservationIgnored let runtime: SceneRuntime
+    // Recording (see CameraModel+Recording.swift)
+    var recording: RecordingState?
+    var lastRecording: URL?
+    var recordingPreferences = RecordingPreferences() { didSet { savePreferences() } }
+    @ObservationIgnored var recordingPending = false
+    @ObservationIgnored var recordingFolderAccess: URL?
+    @ObservationIgnored var recordingTimer: Timer?
+    @ObservationIgnored var quitAfterRecording: (() -> Void)?
+    // Audio (see CameraModel+Audio.swift)
+    var audio = AudioPreferences() { didSet { savePreferences(); audioConfigurationChanged() } }
+    var audioLevels: [String: ChannelLevel] = [:]
+    var mixLevel = ChannelLevel.silent
+    var channelFailures: [String: String] = [:]
+    /// Why a channel is (partly) left out, for example an app in a call.
+    var channelNotes: [String: String] = [:]
+    var availableMicrophones: [AudioInputDevice] = []
+    @ObservationIgnored var audioRuntime: AudioRuntime!
     /// An open in-app window/screen chooser. The sheet completes it with `finishCaptureChoice`.
     var captureRequest: CaptureRequest?
     @ObservationIgnored private var captureContinuation: CheckedContinuation<CaptureOption?, Never>?
@@ -119,6 +136,15 @@ import ScreenCaptureKit
     init(preferencesStore: PreferencesStore = PreferencesStore()) {
         self.preferencesStore = preferencesStore; runtime = SceneRuntime(store: preferencesStore)
         thumbnailStore = SceneThumbnailStore(preferences: preferencesStore)
+        audioRuntime = AudioRuntime(mixer: runtime.output.mixer)
+        audioRuntime.onFailure = { [weak self] id, message in self?.audioChannelFailed(id, message: message) }
+        audioRuntime.onNote = { [weak self] id, note in if self?.channelNotes[id] != note { self?.channelNotes[id] = note } }
+        runtime.output.mixer.onLevels = { [weak self] levels, mix in
+            Task { @MainActor in guard let self, self.running else { return }; self.audioLevels = levels; self.mixLevel = mix }
+        }
+        runtime.output.onRecordingEnded = { [weak self] url, reason, _ in
+            Task { @MainActor in self?.recordingEnded(url: url, reason: reason) }
+        }
         runtime.onSourceStateChange = { [weak self] in self?.sourceRevision += 1 }
         runtime.output.onPublishing = { [weak self] enabled, event in
             Task { @MainActor in guard let self, event == self.runtime.eventID else { return }; self.publishing = enabled }
@@ -128,7 +154,7 @@ import ScreenCaptureKit
                 guard let self, event == self.runtime.eventID else { return }
                 self.status = text; self.running = active; self.busy = false
                 if !active {
-                    self.saveThumbnails(); self.clearPreview(); self.sampling = false; self.samplePending = false
+                    self.saveThumbnails(); self.audioConfigurationChanged(); self.audioLevels = [:]; self.mixLevel = .silent; self.clearPreview(); self.sampling = false; self.samplePending = false
                     self.previewMailbox.invalidate(); self.stopRateTimer()
                     self.requestID += 1; self.runtime.invalidateEvents()
                     let request = self.requestID, previous = self.sceneTask
@@ -203,6 +229,7 @@ import ScreenCaptureKit
         var settings = preferences
         settings.cameraID = selection; settings.profile = currentProfile(cameraID: selection)
         settings.scenes = scenes; settings.selectedScene = selectedScene; settings.output = outputConfiguration
+        settings.audio = audio; settings.recording = recordingPreferences
         return settings
     }
     private func applyProfile(_ profile: CameraProfile) {
@@ -223,6 +250,7 @@ import ScreenCaptureKit
             if let settings = try preferencesStore.load() {
                 preferences = settings; selection = settings.cameraID
                 scenes = settings.scenes; selectedScene = settings.selectedScene; outputConfiguration = settings.output
+                audio = settings.audio; recordingPreferences = settings.recording
                 applyProfile(settings.profile); try preferencesStore.save(snapshot())
                 status = "Settings restored. Start a scene preview or send when ready."
             } else { updateCapabilities() }
@@ -233,7 +261,7 @@ import ScreenCaptureKit
         }
     }
     /// Schedules one coalesced write. `flushPreferences()` writes immediately (quit, stop, tests).
-    private func savePreferences() {
+    func savePreferences() {
         guard !restoring, !restorationFailed else { return }
         saveTask?.cancel()
         saveTask = Task { [weak self] in
@@ -288,10 +316,7 @@ import ScreenCaptureKit
     }
     /// Apple video effects meeting apps get from the AppleCam camera at the canvas size (nil when it is not installed).
     var canvasEffects: VideoEffects? { VideoEffects.virtualCamera(width: outputConfiguration.width, height: outputConfiguration.height) }
-    /// macOS shows the Video Effects menu for an app that is capturing a camera.
-    var canShowVideoEffects: Bool { running && selection != "pattern" && activeScene.needsCamera }
     var effectsDisturbKeying: Bool { (useGreenScreen || useBackgroundMask) && VideoEffects.changesBackgroundInAppleCam }
-    func showVideoEffects() { AVCaptureDevice.showSystemUserInterface(.videoEffects) }
     var canvasSizeOffered: Bool { CameraContract.offersCanvas(width: outputConfiguration.width, height: outputConfiguration.height) }
     static func unofferedCanvasMessage(_ c: CaptureConfiguration) -> String {
         "The AppleCam camera does not offer a \(c.resolution) canvas. Choose a size under Output → Canvas output."
@@ -546,12 +571,15 @@ import ScreenCaptureKit
                     try Task.checkCancellation()
                     guard requestID == request else { return }
                     running = true; busy = false
+                    audioConfigurationChanged()
+                    if recordingPending { recordingPending = false; beginRecording() }
                     if !inPlace { await runtime.prune(scenes: scenes); preferencesStore.cleanupUnusedMedia(); sourceRevision += 1 }
                 } catch is CancellationError { return }
                 catch is ScenePreparationSuperseded { continue }
                 catch {
                     if applied != revision { continue }
                     await runtime.stop(); preferencesStore.cleanupUnusedMedia(); running = false; busy = false; clearPreview(); stopRateTimer()
+                    if recordingPending { recordingPending = false; releaseRecordingFolder() }
                     if let missing = error as? MissingSceneSource {
                         if await resolveMissing(missing.layer) { revision += 1; continue }
                     }
@@ -632,6 +660,7 @@ import ScreenCaptureKit
     func stop() {
         flushPreferences(); plateTask?.cancel(); requestID += 1; runtime.invalidateEvents(); let previous = sceneTask; previous?.cancel(); sceneTask = nil
         running = false; busy = true; scenePreparing = false; previewMailbox.invalidate(); clearPreview(); stopRateTimer()
+        recordingPending = false; audioConfigurationChanged(); audioLevels = [:]; mixLevel = .silent
         let request = requestID
         Task {
             await stopRuntime(after: previous)

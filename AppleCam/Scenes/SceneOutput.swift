@@ -59,6 +59,14 @@ final class SceneOutput: @unchecked Sendable {
     var onPublishing: ((Bool, UUID) -> Void)?
     var onRate: ((Double, UUID) -> Void)?
     var onSample: ((Result<SIMD3<Float>, Error>, UUID) -> Void)?
+    /// A recording ended: its file, and the reason when it stopped on its own (nil after Stop Recording).
+    var onRecordingEnded: ((URL, Error?, UUID) -> Void)?
+    /// Mixes audio while a scene runs; created once and restarted with each scene run.
+    let mixer = AudioMixer()
+    private var recorder: SceneRecorder?
+    /// Smoothed age of the camera picture in composed frames; sound is delayed by it so lips and voice line up.
+    private var cameraAge: Double = 0
+    private var lastDelayUpdate: Double = 0
     private let transport: FrameTransport
     private let camera = FrameProducer()
     private let cameraFrames = CameraFrameStore()
@@ -82,6 +90,10 @@ final class SceneOutput: @unchecked Sendable {
         self.transport = transport
         camera.onCameraFrame = { [weak self] buffer, time in self?.cameraFrames.set(buffer, at: time) }
         camera.onFailure = { [weak self] error in self?.cameraFrames.failIfEnabled(error) }
+        mixer.onRecorderFailure = { [weak self] error in
+            guard let self else { return }
+            queue.async { self.endRecording(error) }
+        }
     }
     func start(plan: SceneRenderPlan, output: CaptureConfiguration, cameraMode: FrameProducer.Mode,
                capture: CaptureConfiguration, publish: Bool, eventID: UUID = UUID()) async throws {
@@ -100,6 +112,7 @@ final class SceneOutput: @unchecked Sendable {
                     timer.schedule(deadline: .now(), repeating: .nanoseconds(Int(1_000_000_000 / output.fps)))
                     timer.setEventHandler { [weak self] in self?.tick() }
                     self.timer = timer; timer.resume()
+                    cameraAge = 0; mixer.setVideoDelay(0); mixer.start()
                     onPublishing?(publish, self.eventID); continuation.resume()
                 } catch { stopOnQueue(); continuation.resume(throwing: error) }
             }
@@ -130,6 +143,28 @@ final class SceneOutput: @unchecked Sendable {
         }
     }
     func stop() async { await withCheckedContinuation { continuation in queue.async { [self] in stopOnQueue(); continuation.resume() } } }
+    /// Starts writing every composed frame, and the mix plus `channels` (IDs in track order), to `recorder`.
+    func startRecording(_ recorder: SceneRecorder, channels: [String]) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                guard running, let compositor, self.recorder == nil else {
+                    continuation.resume(throwing: CameraError.message(self.recorder == nil ? "Start a scene before recording." : "A recording is already running.")); return
+                }
+                self.recorder = recorder; compositor.outputBufferLimit = 12
+                if !recorder.trackNames.isEmpty { mixer.attach(recorder, channels: channels) }
+                continuation.resume()
+            }
+        }
+    }
+    /// Ends the recording; `onRecordingEnded` reports when the file is complete.
+    func stopRecording(_ reason: Error? = nil) { queue.async { [self] in endRecording(reason) } }
+    var isRecording: Bool { queue.sync { recorder != nil } }
+    private func endRecording(_ reason: Error?) {
+        guard let recorder else { return }
+        self.recorder = nil; mixer.detach(); compositor?.outputBufferLimit = 5
+        let event = eventID, end = CMClockGetTime(CMClockGetHostTimeClock())
+        recorder.finish(at: end) { [weak self] error in self?.onRecordingEnded?(recorder.url, reason ?? error, event) }
+    }
     private func configureCamera(needed: Bool) {
         guard needed != cameraRunning else { return }
         cameraRunning = needed; cameraFrames.enable(needed); freshness = SceneCameraFreshness()
@@ -139,13 +174,14 @@ final class SceneOutput: @unchecked Sendable {
         } else { camera.stop() }
     }
     private func stopOnQueue() {
+        endRecording(nil); mixer.stop()
         running = false; timer?.cancel(); timer = nil
         cameraFrames.enable(false); camera.stop(); cameraRunning = false
         transport.stop(); publishing = false; compositor = nil; plan = nil; announced = false
         onPublishing?(false, eventID)
     }
     private func report() { onStatus?(publishing ? "Scene sent to AppleCam. Confirm the picture in your meeting preview." : "Scene preview — local only.", true, eventID) }
-    private func fail(_ error: Error) { stopOnQueue(); onStatus?(error.localizedDescription, false, eventID) }
+    private func fail(_ error: Error) { endRecording(error); stopOnQueue(); onStatus?(error.localizedDescription, false, eventID) }
     private func tick() {
         guard running, let plan, let compositor else { return }
         let now = CMClockGetTime(CMClockGetHostTimeClock())
@@ -157,6 +193,7 @@ final class SceneOutput: @unchecked Sendable {
                     if now.seconds - startedAt > 5 { throw CameraError.message("The selected camera did not start delivering frames.") }; return
                 }
                 guard try freshness.accept(timestamp: frame.1.seconds, now: now.seconds) else { return }
+                cameraAge = cameraAge == 0 ? now.seconds - frame.1.seconds : cameraAge * 0.95 + (now.seconds - frame.1.seconds) * 0.05
                 let processed = try compositor.cameraImage(frame.0, keying: plan.keying, mask: plan.maskPreview)
                 mask = processed.1
                 for layer in plan.scene.layers where layer.visible && layer.source == .camera { images[layer.id] = processed.0 }
@@ -178,6 +215,12 @@ final class SceneOutput: @unchecked Sendable {
             slowSince = nil
             let sample = try Self.package(output, time: now, duration: compositor.configuration.duration)
             if publishing { try transport.send(sample) }
+            if let recorder {
+                do { try recorder.appendVideo(output, at: now) } catch { endRecording(error) }
+            }
+            if completed.seconds - lastDelayUpdate >= 1 {
+                lastDelayUpdate = completed.seconds; mixer.setVideoDelay(plan.scene.needsCamera ? cameraAge : 0)
+            }
             var thumbnail: CGImage?
             if completed.seconds - lastThumbnail >= Self.thumbnailInterval {
                 thumbnail = try compositor.thumbnail(CIImage(cvPixelBuffer: output)); lastThumbnail = completed.seconds

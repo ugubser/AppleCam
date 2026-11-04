@@ -90,6 +90,7 @@ private struct LayerSections: View {
         }
         .disabled(layer.locked)
         Section("Source") { SourceControls(model: model, layer: layer) }
+        if layer.source.canHaveAudio { LayerAudioSection(model: model, layer: layer) }
         Section {
             Button("Delete Layer", role: .destructive) { model.deleteLayer(layer.id) }.disabled(layer.locked)
         }
@@ -163,7 +164,7 @@ private struct BrowserControls: View {
                 DraftNumberField("Height", integer: settings.height) { h in update { $0.height = h } }.labelsHidden().frame(width: 64).accessibilityLabel("Browser viewport height")
             }
         }
-        Text("Silent WebKit page, 200–4096 px. Its rendering window stays open while the layer is active; do not minimise it.")
+        Text("WebKit page, 200–4096 px. Interact with Page opens it in a window for clicking, logging in or playback; close the window when you're done. Logins are kept.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }
@@ -419,6 +420,7 @@ private struct OutputInspector: View {
                 }.font(.caption).foregroundStyle(.secondary)
             }
             .disabled(locked)
+            RecordingSection(model: model)
             Section {
                 LabeledContent("In meeting apps") {
                     Text(VideoEffects.summary(model.canvasEffects, size: model.outputConfiguration.resolution,
@@ -428,16 +430,15 @@ private struct OutputInspector: View {
                     Text(VideoEffects.summary(model.webcamEffects, size: model.captureConfiguration.resolution,
                         unavailable: model.selection == "pattern" ? "No webcam selected" : "This camera does not offer the format"))
                 }
-                Button("Video Effects…") { model.showVideoEffects() }.disabled(!model.canShowVideoEffects)
             } header: {
                 Text("Apple video effects")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if model.effectsDisturbKeying {
-                        Text("Portrait or an Apple background is on for AppleCam's webcam. It changes what is behind you, so the green screen and background mask no longer match. Turn it off in Video Effects.")
+                        Text("Portrait or an Apple background is on for AppleCam's webcam. It changes what is behind you, so the green screen and background mask no longer match. Turn it off in Control Center → Video Effects.")
                             .foregroundStyle(.orange)
                     }
-                    Text("Reactions, Portrait, Studio Light and backgrounds are offered by macOS only for smaller formats, usually 1920 × 1080 and below. In a meeting, choose them in Control Center → Video Effects while the meeting app uses the AppleCam camera; they then apply to the whole scene. Video Effects… sets them for the webcam inside AppleCam while a webcam scene runs.")
+                    Text("Reactions, Portrait, Studio Light and backgrounds are offered by macOS only for smaller formats, usually 1920 × 1080 and below. In a meeting, choose them in Control Center → Video Effects while the meeting app uses the AppleCam camera; they then apply to the whole scene.")
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Section {

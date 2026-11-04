@@ -21,8 +21,9 @@ final class StillSceneSource: SceneMediaSource {
     @MainActor func deactivate() async {}
 }
 
-/// A single muted player per clip layer survives scene changes. Inactive scenes pause it in place.
-final class ClipSceneSource: SceneMediaSource, @unchecked Sendable {
+/// A single player per clip layer survives scene changes. Inactive scenes pause it in place. The player's own output is
+/// always silent; with Layer → Audio on, a processing tap copies the sound into the mix.
+final class ClipSceneSource: SceneMediaSource, AudioCapableSource, @unchecked Sendable {
     let player: AVPlayer
     private let item: AVPlayerItem
     private let output: AVPlayerItemVideoOutput
@@ -58,6 +59,26 @@ final class ClipSceneSource: SceneMediaSource, @unchecked Sendable {
     }
     @MainActor func deactivate() async {
         player.pause(); lock.withLock { active = false }
+    }
+    private var audioTap: ClipAudioTap?
+    @MainActor func setAudioChannel(_ channel: MixChannel?, report: @escaping @MainActor (AudioReport) -> Void) {
+        guard let channel else {
+            audioTap?.input.attach(nil); audioTap = nil
+            item.audioMix = nil; player.isMuted = true; player.volume = 0
+            return
+        }
+        if let audioTap { audioTap.input.attach(channel); return }
+        let tap = ClipAudioTap(item: item); tap.input.attach(channel); audioTap = tap
+        Task { @MainActor in
+            do {
+                guard let track = try await item.asset.loadTracks(withMediaType: .audio).first else { report(.note("This clip has no sound.")); return }
+                guard audioTap === tap else { return }
+                item.audioMix = try tap.audioMix(for: track)
+                // The tap silences what it passes on, so the player is unmuted only to make it deliver audio.
+                player.isMuted = false; player.volume = 1
+                report(.note(nil))
+            } catch { report(.failure("The clip's sound cannot be read: \(error.localizedDescription)")) }
+        }
     }
     @MainActor func togglePause() {
         lock.lock(); userPaused.toggle(); let play = active && !userPaused; lock.unlock()
@@ -120,15 +141,22 @@ final class SourceFrameStore {
     }
 }
 
-final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCStreamDelegate {
+final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCStreamDelegate, AudioCapableSource {
     private let filter: SCContentFilter
+    /// What a layer's sound is: a window layer's app (a muted Core Audio tap, `AppSoundTap`) or all sound on the screen
+    /// (an audio-only ScreenCaptureKit stream, `AppAudioCapture`).
+    enum Sound: Equatable { case application(pid: pid_t, bundleID: String), display }
+    private let sound: Sound
+    private var audio: LayerSoundCapture?
+    private var audioReport: (@MainActor (AudioReport) -> Void)?
+    private var isActive = false
     private let configuration: SCStreamConfiguration
     private let frames = SourceFrameStore()
     private var stream: SCStream?
     private let streamLock = NSLock()
     private let queue = DispatchQueue(label: "com.vanguardsignals.AppleCam.layer-capture", qos: .userInitiated)
-    init(filter: SCContentFilter, fps: Double, cursor: Bool = true) {
-        self.filter = filter
+    init(filter: SCContentFilter, fps: Double, audio: Sound, cursor: Bool = true) {
+        self.filter = filter; sound = audio
         configuration = SCStreamConfiguration()
         // contentRect is in points; capture in pixels so Retina windows and screens stay sharp.
         let size = filter.contentRect.size, scale = CGFloat(filter.pointPixelScale)
@@ -149,8 +177,33 @@ final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCSt
         streamLock.withLock { stream = next; frames.begin() }
         do { try await next.startCapture() }
         catch { streamLock.withLock { frames.end(); stream = nil }; throw error }
+        isActive = true; await startAudio()
+    }
+    @MainActor func setAudioChannel(_ channel: MixChannel?, report: @escaping @MainActor (AudioReport) -> Void) {
+        if let channel {
+            let capture = audio ?? makeCapture()
+            capture.input.attach(channel); audio = capture; audioReport = report
+            capture.onNote = { note in report(.note(note)) }
+            capture.onFailure = { message in report(.failure(message)) }
+            if isActive { Task { await startAudio() } }
+        } else if let old = audio {
+            audio = nil; audioReport = nil; report(.note(nil)); old.input.attach(nil)
+            Task { await old.stop() }
+        }
+    }
+    @MainActor private func makeCapture() -> LayerSoundCapture {
+        switch sound {
+        case .application(let pid, let bundleID): return AppSoundTap(pid: pid, bundleID: bundleID)
+        case .display: return AppAudioCapture(kind: .display)
+        }
+    }
+    @MainActor private func startAudio() async {
+        guard let audio else { return }
+        do { try await audio.start() } catch { audioReport?(.failure("Sound capture could not start: \(error.localizedDescription)")) }
     }
     @MainActor func deactivate() async {
+        isActive = false
+        await audio?.stop()
         guard let old = streamLock.withLock({ () -> SCStream? in
             let old = stream; stream = nil; frames.end(); return old
         }) else { return }
