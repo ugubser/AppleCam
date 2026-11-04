@@ -12,6 +12,23 @@ public enum CameraContract {
     public static let fps: Int32 = 30
     public static let queueCapacity = 2
     public static let maximumFrameAge: Double = 0.15
+    /// Canvas sizes the virtual camera always offers, smallest first. The extension also offers the sizes of
+    /// cameras attached when it starts, but only these are guaranteed, so the canvas is limited to them.
+    public static let canvasSizes: [CanvasSize] = [
+        .init(320, 240), .init(640, 360), .init(640, 480), .init(800, 600), .init(1024, 768), .init(1280, 720),
+        .init(1280, 960), .init(1600, 1200), .init(1920, 1080), .init(1920, 1200), .init(2560, 1440),
+        .init(3840, 2160), .init(4096, 2160), .init(5120, 2880), .init(7680, 4320),
+    ]
+    public static func offersCanvas(width: Int, height: Int) -> Bool { canvasSizes.contains(CanvasSize(width, height)) }
+}
+
+public struct CanvasSize: Hashable, Sendable, Identifiable {
+    public let width: Int
+    public let height: Int
+    public init(_ width: Int, _ height: Int) { self.width = width; self.height = height }
+    public var id: String { "\(width)x\(height)" }
+    /// Plain digits: SwiftUI's Int interpolation would add locale grouping ("3'840").
+    public var label: String { "\(String(width)) × \(String(height))" }
 }
 
 /// Shared by host and extension. Call from their respective serial frame queues.

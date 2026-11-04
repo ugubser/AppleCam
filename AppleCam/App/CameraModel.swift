@@ -246,12 +246,21 @@ import ScreenCaptureKit
         guard !running, !busy, next.isValid else { return false }
         captureConfiguration = next; return true
     }
-    /// Applies a typed canvas size or rate. Returns false (leaving the format unchanged) for an invalid value.
-    @discardableResult func setOutput(width: Int? = nil, height: Int? = nil, fps: Double? = nil) -> Bool {
+    /// Applies a canvas size or typed rate. Returns false (leaving the format unchanged) for an invalid value
+    /// or a size the virtual camera does not offer.
+    @discardableResult func setOutput(size: CanvasSize? = nil, fps: Double? = nil) -> Bool {
         var next = outputConfiguration
-        if let width { next.width = width }; if let height { next.height = height }; if let fps { next.fps = fps }
+        if let size {
+            guard CameraContract.offersCanvas(width: size.width, height: size.height) else { return false }
+            next.width = size.width; next.height = size.height
+        }
+        if let fps { next.fps = fps }
         guard !running, !busy, next.isValid else { return false }
         outputConfiguration = next; return true
+    }
+    var canvasSizeOffered: Bool { CameraContract.offersCanvas(width: outputConfiguration.width, height: outputConfiguration.height) }
+    static func unofferedCanvasMessage(_ c: CaptureConfiguration) -> String {
+        "The AppleCam camera does not offer a \(c.resolution) canvas. Choose a size under Output → Canvas output."
     }
     private func updateCapabilities() {
         if selection == "pattern" {
@@ -490,6 +499,7 @@ import ScreenCaptureKit
                     }
                     let scene = activeScene
                     guard outputConfiguration.isValid else { throw CameraError.message("Choose a valid canvas resolution and frame rate.") }
+                    guard canvasSizeOffered else { throw CameraError.message(Self.unofferedCanvasMessage(outputConfiguration)) }
                     if scene.needsCamera {
                         guard formatAvailable else { throw CameraError.message("This camera does not offer the saved format. Choose an available camera format.") }
                         if selection != "pattern", AVCaptureDevice.authorizationStatus(for: .video) != .authorized {

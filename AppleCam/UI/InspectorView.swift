@@ -395,12 +395,11 @@ private struct OutputInspector: View {
             }
             .disabled(locked)
             Section {
-                LabeledContent("Size") {
-                    HStack(spacing: 4) {
-                        DraftNumberField("Width", integer: model.outputConfiguration.width) { model.setOutput(width: $0) }.labelsHidden().frame(width: 64).accessibilityLabel("Canvas width")
-                        Text("×")
-                        DraftNumberField("Height", integer: model.outputConfiguration.height) { model.setOutput(height: $0) }.labelsHidden().frame(width: 64).accessibilityLabel("Canvas height")
-                    }
+                let current = CanvasSize(model.outputConfiguration.width, model.outputConfiguration.height)
+                Picker("Size", selection: Binding(get: { current }, set: { model.setOutput(size: $0) })) {
+                    ForEach(CameraContract.canvasSizes) { Text($0.label).tag($0) }
+                    // A size saved by an earlier version stays visible so it can be replaced, but it cannot be chosen again.
+                    if !model.canvasSizeOffered { Text("\(current.label) (not offered)").tag(current) }
                 }
                 LabeledContent("Frame rate") {
                     HStack(spacing: 4) {
@@ -412,8 +411,12 @@ private struct OutputInspector: View {
             } header: {
                 Text("Canvas output")
             } footer: {
-                Text("Shared by all four scenes. Your meeting app may request a smaller format; the whole picture is kept with letterboxing.")
-                    .font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    if !model.canvasSizeOffered {
+                        Text(CameraModel.unofferedCanvasMessage(model.outputConfiguration)).foregroundStyle(.orange)
+                    }
+                    Text("Shared by all four scenes. These are the sizes the AppleCam camera offers. Your meeting app may request a smaller format; the whole picture is kept with letterboxing.")
+                }.font(.caption).foregroundStyle(.secondary)
             }
             .disabled(locked)
             Section {

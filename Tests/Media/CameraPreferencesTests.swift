@@ -169,12 +169,25 @@ final class CameraPreferencesTests: XCTestCase {
     }
     @MainActor func testTypedFormatValuesAreValidatedBeforeApplying() throws {
         let model = CameraModel(preferencesStore: try store())
-        XCTAssertFalse(model.setOutput(width: 0)); XCTAssertFalse(model.setOutput(fps: -5))
+        XCTAssertFalse(model.setOutput(size: CanvasSize(0, 1080))); XCTAssertFalse(model.setOutput(fps: -5))
+        XCTAssertFalse(model.setOutput(size: CanvasSize(4092, 2160)), "The virtual camera does not offer this size")
         XCTAssertEqual(model.outputConfiguration, CaptureConfiguration())
-        XCTAssertTrue(model.setOutput(width: 1280, height: 720)); XCTAssertTrue(model.setOutput(fps: 25))
+        XCTAssertTrue(model.setOutput(size: CanvasSize(1280, 720))); XCTAssertTrue(model.setOutput(fps: 25))
         XCTAssertEqual(model.outputConfiguration, .init(width: 1280, height: 720, fps: 25))
         XCTAssertFalse(model.setCaptureFPS(.infinity)); XCTAssertTrue(model.setCaptureFPS(24))
         XCTAssertEqual(model.captureConfiguration.fps, 24)
+    }
+    @MainActor func testCanvasSizeTheCameraDoesNotOfferStopsWithAnExplanation() async throws {
+        let store = try store(), model = CameraModel(preferencesStore: store)
+        model.outputConfiguration = .init(width: 4092, height: 2160, fps: 60)
+        XCTAssertFalse(model.canvasSizeOffered)
+        model.start(publish: false)
+        for _ in 0..<200 where !model.status.contains("does not offer") { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(model.status, CameraModel.unofferedCanvasMessage(model.outputConfiguration))
+        XCTAssertFalse(model.running)
+        // The saved size is kept (not silently changed) until a supported size is chosen.
+        XCTAssertEqual(model.outputConfiguration.width, 4092)
+        XCTAssertTrue(model.setOutput(size: CanvasSize(4096, 2160))); XCTAssertTrue(model.canvasSizeOffered)
     }
     @MainActor func testCanvasColourIsValidatedAndPerScene() throws {
         let model = CameraModel(preferencesStore: try store())

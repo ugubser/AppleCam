@@ -6,6 +6,15 @@ final class CameraContractTests: XCTestCase {
                         width: Int = 1920, bgra: Bool = true) throws {
         try gate.accept(timestamp: time, now: now, width: width, height: 1080, isBGRA: bgra)
     }
+    func testCanvasSizesAreTheStandardFormatsTheCameraOffers() {
+        let sizes = CameraContract.canvasSizes
+        XCTAssertEqual(Set(sizes).count, sizes.count, "No duplicates")
+        XCTAssertEqual(sizes, sizes.sorted { ($0.width, $0.height) < ($1.width, $1.height) }, "Smallest first")
+        for (w, h) in [(1920, 1080), (1280, 720), (3840, 2160), (4096, 2160)] { XCTAssertTrue(CameraContract.offersCanvas(width: w, height: h)) }
+        XCTAssertFalse(CameraContract.offersCanvas(width: 4092, height: 2160))
+        XCTAssertTrue(CameraContract.offersCanvas(width: CameraContract.width, height: CameraContract.height))
+        XCTAssertEqual(CanvasSize(3840, 2160).label, "3840 × 2160"); XCTAssertEqual(CanvasSize(3840, 2160).id, "3840x2160")
+    }
     func testFreshIncreasingFrames() throws {
         var gate = FrameGate()
         try accept(&gate, 10, now: 10.01)

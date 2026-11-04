@@ -55,7 +55,7 @@ final class CameraDevice: NSObject, CMIOExtensionDeviceSource {
         converter = try VideoOutputConverter()
         // Advertise standard meeting formats plus every resolution of cameras currently attached.
         // CMIO requires this list to remain stable for the lifetime of the stream.
-        var sizes = Set(["1920x1080", "1280x720", "3840x2160", "4096x2160", "2560x1440", "640x480", "640x360", "320x240", "800x600", "1024x768", "1280x960", "1600x1200", "1920x1200", "5120x2880", "7680x4320"])
+        var sizes = Set(CameraContract.canvasSizes.map(\.id))
         let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified).devices
         for camera in devices where camera.uniqueID != CameraContract.deviceID.uuidString {
             for format in camera.formats {
