@@ -110,8 +110,8 @@ final class AudioMixerTests: XCTestCase {
         var screen = SceneLayer(name: "Screen", source: .display(nil)); screen.audio = LayerAudio(enabled: true)
         scenes[1].layers += [page, quiet, screen]; scenes[2].layers.append(page2)
         let list = AudioRuntime.channelList(audio: audio, scenes: scenes)
-        XCTAssertEqual(list.map(\.id), ["mic:yeti", screen.id.uuidString, "browser"])
-        XCTAssertEqual(list.map(\.name), ["Yeti", "Screen", "Browser pages"], "All browser layers share one channel")
+        XCTAssertEqual(list.map(\.id), ["mic:yeti", page.id.uuidString, screen.id.uuidString, page2.id.uuidString])
+        XCTAssertEqual(list.map(\.name), ["Yeti", "Page", "Screen", "Page 2"], "Each browser layer is its own channel")
     }
 }
 

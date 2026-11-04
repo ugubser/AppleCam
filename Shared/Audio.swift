@@ -56,14 +56,12 @@ public struct AudioPreferences: Codable, Equatable, Sendable {
     /// Microphones in the mix, heard in every scene.
     public var microphones: [MicrophoneChannel] = []
     public var master = ChannelMix()
-    /// All browser layers share one channel: WebKit plays every page through one audio process.
-    public var browser = ChannelMix()
     /// Plays the mix on `monitorDeviceUID` (nil: the system output).
     public var monitor = false
     public var monitorDeviceUID: String?
     public init() {}
     public var isValid: Bool {
-        microphones.allSatisfy(\.isValid) && Set(microphones.map(\.deviceID)).count == microphones.count && master.isValid && browser.isValid
+        microphones.allSatisfy(\.isValid) && Set(microphones.map(\.deviceID)).count == microphones.count && master.isValid
     }
 }
 
@@ -92,6 +90,9 @@ public struct LevelMeter: Equatable, Sendable {
 /// Every device runs on its own clock. Consecutive buffers are written back to back and gently pulled toward their
 /// timestamps by inserting or dropping one frame per buffer when they drift more than `slewThreshold`, which corrects
 /// several thousand ppm without audible jumps. Only a jump larger than `resyncThreshold` (a real dropout) re-anchors.
+///
+/// A channel can have several streams (each frame of a web page plays its own): each stream keeps its own position
+/// and the streams are summed.
 public final class ChannelTimeline: @unchecked Sendable {
     public static let slewThreshold: Int64 = 48       // 1 ms
     public static let resyncThreshold: Int64 = 4_800  // 100 ms
@@ -99,20 +100,20 @@ public final class ChannelTimeline: @unchecked Sendable {
     private var storage: [Float]
     private let capacity: Int64
     private var readHead: Int64 = 0
-    private var next: Int64?
+    private var next: [Int: Int64] = [:]
     public private(set) var droppedLate = 0
     public private(set) var resyncs = 0
     public init(seconds: Double = 4) {
         capacity = AudioFormat.frames(seconds: seconds)
         storage = Array(repeating: 0, count: Int(capacity) * AudioFormat.channels)
     }
-    /// Writes interleaved stereo frames whose first frame belongs at `position`.
-    public func write(_ samples: UnsafeBufferPointer<Float>, at position: Int64) {
+    /// Adds interleaved stereo frames of `stream` whose first frame belongs at `position`.
+    public func write(_ samples: UnsafeBufferPointer<Float>, at position: Int64, stream: Int = 0) {
         lock.lock(); defer { lock.unlock() }
         let c = AudioFormat.channels, count = samples.count / c
         guard count > 0 else { return }
         var start = position, written = count
-        if let expected = next {
+        if let expected = next[stream] {
             let drift = position - expected
             if abs(drift) <= Self.resyncThreshold {
                 start = expected
@@ -120,13 +121,13 @@ public final class ChannelTimeline: @unchecked Sendable {
                 else if drift < -Self.slewThreshold, count > 1 { written = count - 1 } // running ahead: drop the last frame
             } else { resyncs += 1 }
         }
-        next = start + Int64(written)
+        next[stream] = start + Int64(written)
         for i in 0..<written {
             let at = start + Int64(i), source = min(i, count - 1)
             guard at >= readHead else { droppedLate += 1; continue }
             guard at < readHead + capacity else { continue }
             let slot = Int(at % capacity) * c
-            for k in 0..<c { storage[slot + k] = samples[source * c + k] }
+            for k in 0..<c { storage[slot + k] += samples[source * c + k] }
         }
     }
     /// Copies frames [position, position + count) into `out` (interleaved stereo) and clears them.
@@ -142,8 +143,11 @@ public final class ChannelTimeline: @unchecked Sendable {
         }
         readHead = max(readHead, position + Int64(count))
     }
-    /// Starts a new run (after a source restarts): the next buffer anchors at its own timestamp.
-    public func restart() { lock.lock(); next = nil; lock.unlock() }
+    /// Starts a new run (after a source restarts): the next buffer of every stream anchors at its own timestamp.
+    public func restart() { lock.lock(); next = [:]; lock.unlock() }
+    /// Forgets a stream that ended (its frame went away).
+    public func forget(stream: Int) { lock.lock(); next[stream] = nil; lock.unlock() }
+    public var streamCount: Int { lock.lock(); defer { lock.unlock() }; return next.count }
 }
 
 /// Applies per-channel gain (ramped across the block so fader moves never click) and sums channels into the mix.
@@ -171,5 +175,50 @@ public enum ChannelLayoutMath {
         var out = [Float](repeating: 0, count: first.count * 2)
         for i in 0..<first.count { out[2 * i] = first[i]; out[2 * i + 1] = right[i] }
         return out
+    }
+}
+
+/// A block of sound sent by a browser layer's page script (`BrowserSceneSource.silenceScript`). The page is untrusted:
+/// every field is checked, samples are made finite and bounded, and the time must be close to now.
+public struct PageAudioPacket: Equatable, Sendable {
+    public static let maximumFrames = 16_384
+    public static let sampleRates: ClosedRange<Double> = 8_000...192_000
+    /// Packets stamped further than this from now (seconds) are rejected.
+    public static let maximumAge: Double = 5
+    /// Identifies the frame (document) that played the sound.
+    public let stream: String
+    /// Wall-clock time (ms since 1970) at which the first frame would have been heard.
+    public let wallTime: Double
+    public let sampleRate: Double
+    /// Interleaved stereo samples.
+    public let samples: [Float]
+    public var frames: Int { samples.count / 2 }
+
+    public init?(body: Any, wallNow: Double) {
+        guard let body = body as? [String: Any], let stream = body["s"] as? String, (1...64).contains(stream.utf8.count),
+              let time = (body["t"] as? NSNumber)?.doubleValue, time.isFinite, abs(wallNow - time) <= Self.maximumAge * 1000,
+              let rate = (body["r"] as? NSNumber)?.doubleValue, Self.sampleRates.contains(rate),
+              let encoded = body["d"] as? String, let data = Data(base64Encoded: encoded),
+              data.count > 0, data.count % 8 == 0, data.count / 8 <= Self.maximumFrames else { return nil }
+        var samples = [Float](repeating: 0, count: data.count / 4)
+        _ = samples.withUnsafeMutableBytes { data.copyBytes(to: $0) }
+        for i in samples.indices { let v = samples[i]; samples[i] = v.isFinite ? min(max(v, -4), 4) : 0 }
+        self.stream = stream; wallTime = time; sampleRate = rate; self.samples = samples
+    }
+    /// The host-clock time of the first frame, given the host and wall clocks read at the same moment.
+    public func hostTime(hostNow: Double, wallNow: Double) -> Double { hostNow - (wallNow - wallTime) / 1000 }
+}
+
+/// What a browser layer's page reports about sound it cannot hand to AppleCam.
+public enum PageAudioNote {
+    public static let unavailable = "Some of this page's sound cannot be captured, so it stays silent."
+    /// The explanation for a page script's note message, or nil if the body is not one.
+    public static func parse(_ body: Any) -> String? {
+        guard let body = body as? [String: Any], let kind = body["note"] as? String else { return nil }
+        if kind == "unavailable" { return unavailable }
+        guard kind == "blocked", let host = body["host"] as? String else { return nil }
+        let clean = String(String.UnicodeScalarView(host.unicodeScalars.filter { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || "-.:[]".unicodeScalars.contains($0)) }).prefix(253))
+        guard !clean.isEmpty else { return nil }
+        return "Sound from \(clean) cannot be recorded: that site does not let other pages use its sound, so it stays silent."
     }
 }

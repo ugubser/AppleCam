@@ -164,7 +164,7 @@ private struct BrowserControls: View {
                 DraftNumberField("Height", integer: settings.height) { h in update { $0.height = h } }.labelsHidden().frame(width: 64).accessibilityLabel("Browser viewport height")
             }
         }
-        Text("Silent WebKit page, 200–4096 px. Its rendering window stays open while the layer is active; do not minimise it.")
+        Text("WebKit page, 200–4096 px. Interact with Page opens it in a window for clicking, logging in or playback; close the window when you're done. Logins are kept.")
             .font(.caption).foregroundStyle(.secondary)
     }
 }

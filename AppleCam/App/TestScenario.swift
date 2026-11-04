@@ -7,7 +7,9 @@ import ScreenCaptureKit
 /// Debug builds only: `--test-audio-scenario <folder>` runs an unattended end-to-end recording for verification.
 /// The folder (inside the app container) holds `page-url.txt` and optionally `clip.mov`; the app builds Scene 1 with the
 /// test-pattern webcam, the main screen, the page and the clip (all with audio on), records `seconds.txt` seconds
-/// (default 6) into `<folder>/out`, writes `<folder>/result.json`, and quits.
+/// (default 6) into `<folder>/out`, writes `<folder>/result.json`, and quits. It also listens to AppleCam's own output
+/// (including its WebKit processes) to show that page and clip sound never reach the speakers; `control.wav` (if present)
+/// is played at 0.1 % volume first to prove that this listener hears AppleCam.
 @MainActor enum TestScenario {
     static func runIfRequested(_ model: CameraModel) {
         let arguments = ProcessInfo.processInfo.arguments
@@ -48,6 +50,13 @@ import ScreenCaptureKit
             var scene = model.scenes[0]; scene.layers = layers; model.scenes[0] = scene
             model.selectScene(0)
             let seconds = (try? String(contentsOf: folder.appendingPathComponent("seconds.txt"), encoding: .utf8)).flatMap { Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 6
+            let own = OwnOutputMeter()
+            try await own.start()
+            if let control = NSSound(contentsOf: folder.appendingPathComponent("control.wav"), byReference: true) {
+                control.volume = 0.001; control.play()
+                try await Task.sleep(nanoseconds: 1_500_000_000); control.stop()
+                result["ownOutputControlPeak"] = Double(own.takePeakDB())
+            }
             model.startRecording()
             let deadline = Date().addingTimeInterval(20)
             while model.recording == nil, Date() < deadline { try await Task.sleep(nanoseconds: 50_000_000) }
@@ -58,6 +67,8 @@ import ScreenCaptureKit
                 for (id, level) in model.audioLevels { peaks[id] = max(peaks[id] ?? -120, level.peakDB) }
                 peaks["mix"] = max(peaks["mix"] ?? -120, model.mixLevel.peakDB)
             }
+            result["ownOutputPeakWhileRecording"] = Double(own.takePeakDB())
+            await own.stop()
             result["notes"] = model.channelNotes
             result["microphoneUsers"] = AudioInputUsers.current().map { "\($0.bundleID) (\($0.pid))" }
             if let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false) {
@@ -78,6 +89,38 @@ import ScreenCaptureKit
         model.stop()
         try? await Task.sleep(nanoseconds: 500_000_000)
         NSApp.terminate(nil)
+    }
+}
+
+/// Peak level of everything AppleCam (and its WebKit helpers) plays, from ScreenCaptureKit.
+private final class OwnOutputMeter: NSObject, SCStreamOutput, @unchecked Sendable {
+    private let lock = NSLock()
+    private var peak: Float = 0
+    private var stream: SCStream?
+    @MainActor func start() async throws {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+        guard let display = content.displays.first,
+              let ours = content.applications.first(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) else {
+            throw CameraError.message("AppleCam's own output cannot be measured.")
+        }
+        let configuration = SCStreamConfiguration()
+        configuration.capturesAudio = true; configuration.excludesCurrentProcessAudio = false
+        configuration.sampleRate = 48_000; configuration.channelCount = 2
+        configuration.width = 2; configuration.height = 2; configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+        let next = SCStream(filter: SCContentFilter(display: display, including: [ours], exceptingWindows: []), configuration: configuration, delegate: nil)
+        try next.addStreamOutput(self, type: .audio, sampleHandlerQueue: DispatchQueue(label: "own-output"))
+        try await next.startCapture(); stream = next
+    }
+    func stop() async { try? await stream?.stopCapture(); stream = nil }
+    /// The peak since the last call, in dBFS.
+    func takePeakDB() -> Float { lock.withLock { defer { peak = 0 }; return AudioMath.decibels(peak) } }
+    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        guard type == .audio else { return }
+        try? sampleBuffer.withAudioBufferList { list, _ in
+            var local: Float = 0
+            for buffer in list { if let data = buffer.mData { let samples = data.assumingMemoryBound(to: Float.self); for i in 0..<Int(buffer.mDataByteSize) / 4 { local = max(local, abs(samples[i])) } } }
+            lock.withLock { peak = max(peak, local) }
+        }
     }
 }
 #endif

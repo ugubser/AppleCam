@@ -7,9 +7,6 @@ import AVFoundation
 enum AudioChannelID {
     static func microphone(_ uid: String) -> String { "mic:" + uid }
     static func layer(_ id: UUID) -> String { id.uuidString }
-    /// The one channel shared by all browser layers.
-    static let browser = "browser"
-    static let browserName = "Browser pages"
 }
 
 /// One source's samples on the mix timeline, with its volume, mute and whether its scene is live.
@@ -37,11 +34,11 @@ final class MixChannel: @unchecked Sendable {
     /// Delay added to every source sample so sound lines up with the (older) camera picture in the same frame.
     fileprivate func setVideoDelay(_ seconds: Double) { lock.withLock { extraDelay = followsCamera ? seconds : 0 } }
     fileprivate var targetGain: Float { lock.withLock { active ? mix.gain : 0 } }
-    /// Interleaved stereo float frames captured at `hostTime` (seconds on the host clock).
-    func write(_ samples: UnsafeBufferPointer<Float>, hostTime: Double) {
+    /// Interleaved stereo float frames of `stream` captured at `hostTime` (seconds on the host clock).
+    func write(_ samples: UnsafeBufferPointer<Float>, hostTime: Double, stream: Int = 0) {
         let state = lock.withLock { () -> (Double, Double)? in epoch.map { ($0, mix.offsetMilliseconds / 1000 + extraDelay) } }
         guard let (epoch, delay) = state, hostTime.isFinite else { return }
-        timeline.write(samples, at: AudioFormat.frames(seconds: hostTime + delay - epoch))
+        timeline.write(samples, at: AudioFormat.frames(seconds: hostTime + delay - epoch), stream: stream)
     }
 }
 

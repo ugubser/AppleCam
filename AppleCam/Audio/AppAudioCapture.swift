@@ -54,15 +54,13 @@ enum AudioInputUsers {
     }
 }
 
-/// Audio of one app, of the whole screen, or of AppleCam's own browser pages, through an audio-only ScreenCaptureKit stream.
+/// Audio of one app or of the whole screen, through an audio-only ScreenCaptureKit stream.
 final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     enum Kind: Equatable {
         /// The app owning a window layer.
         case application(pid: pid_t)
         /// All sound except AppleCam and apps using a microphone.
         case display
-        /// AppleCam's own WebKit pages (browser layers).
-        case ownPages
     }
     let kind: Kind
     let input = ChannelInput()
@@ -84,7 +82,7 @@ final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         let configuration = SCStreamConfiguration()
         configuration.capturesAudio = true
         configuration.sampleRate = Int(AudioFormat.sampleRate); configuration.channelCount = 2
-        configuration.excludesCurrentProcessAudio = kind != .ownPages
+        configuration.excludesCurrentProcessAudio = true
         // Audio only: the smallest picture at the lowest rate; no screen output is attached.
         configuration.width = 2; configuration.height = 2
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 1)
@@ -158,11 +156,6 @@ final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
             }
             let note = inCall.isEmpty ? nil : "Left out while using a microphone: " + inCall.map(\.applicationName).joined(separator: ", ") + "."
             return (SCContentFilter(display: display, excludingApplications: ours + inCall, exceptingWindows: []), note, false)
-        case .ownPages:
-            guard let ours = content.applications.first(where: { $0.processID == own }) else {
-                throw CameraError.message("AppleCam's browser pages cannot be captured.")
-            }
-            return (SCContentFilter(display: display, including: [ours], exceptingWindows: []), nil, false)
         }
     }
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {

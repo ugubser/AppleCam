@@ -4,8 +4,11 @@ import AppleCamCore
 import AVFoundation
 
 /// Converts any linear-PCM input (any rate, mono or stereo, interleaved or not) to the mix format and writes it
-/// into a channel. One instance per source; called from that source's delivery thread only.
+/// into a channel. One instance per source stream; called from that stream's delivery thread only.
 final class ChannelInput: @unchecked Sendable {
+    /// Which of the channel's streams this input writes (see `ChannelTimeline`).
+    let stream: Int
+    init(stream: Int = 0) { self.stream = stream }
     private let lock = NSLock()
     private var channel: MixChannel?
     private var converter: AVAudioConverter?
@@ -35,7 +38,7 @@ final class ChannelInput: @unchecked Sendable {
         let format = buffer.format
         if format.commonFormat == .pcmFormatFloat32, format.sampleRate == AudioFormat.sampleRate, format.channelCount == 2,
            format.isInterleaved, let data = buffer.floatChannelData {
-            channel.write(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength) * 2), hostTime: hostTime); return
+            channel.write(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength) * 2), hostTime: hostTime, stream: stream); return
         }
         if inputFormat != format {
             inputFormat = format; converter = AVAudioConverter(from: format, to: target); convertedIn = 0; convertedOut = 0
@@ -54,7 +57,7 @@ final class ChannelInput: @unchecked Sendable {
         let held = convertedIn * AudioFormat.sampleRate / format.sampleRate - convertedOut
         convertedIn += Double(buffer.frameLength); convertedOut += Double(out.frameLength)
         guard error == nil, out.frameLength > 0, let data = out.floatChannelData else { return }
-        channel.write(UnsafeBufferPointer(start: data[0], count: Int(out.frameLength) * 2), hostTime: hostTime - held / AudioFormat.sampleRate)
+        channel.write(UnsafeBufferPointer(start: data[0], count: Int(out.frameLength) * 2), hostTime: hostTime - held / AudioFormat.sampleRate, stream: stream)
     }
 }
 
@@ -136,8 +139,6 @@ protocol AudioCapableSource: AnyObject {
     private var channels: [String: MixChannel] = [:]
     private var microphones: [String: MicrophoneCapture] = [:]
     private var attached: [UUID: ObjectIdentifier] = [:]
-    private var pages: AppAudioCapture?
-    private var pagesStarting = false
     /// A channel stopped (channel ID, explanation).
     var onFailure: ((String, String) -> Void)?
     /// A channel's note changed (channel ID, explanation or nil).
@@ -148,13 +149,10 @@ protocol AudioCapableSource: AnyObject {
         mixer.onMixBlock = { monitor.push($0) }
     }
 
-    /// Channel IDs and names in track order: microphones, layers with audio (browser layers share one channel).
+    /// Channel IDs and names in track order: microphones, then layers with audio.
     static func channelList(audio: AudioPreferences, scenes: [CameraScene]) -> [(id: String, name: String)] {
-        let layers = scenes.flatMap(\.layers).filter(\.hasAudio)
-        var list = audio.microphones.map { (id: AudioChannelID.microphone($0.deviceID), name: $0.name) }
-        list += layers.filter { !$0.source.isBrowser }.map { (id: AudioChannelID.layer($0.id), name: $0.name) }
-        if layers.contains(where: \.source.isBrowser) { list.append((AudioChannelID.browser, AudioChannelID.browserName)) }
-        return list
+        audio.microphones.map { (id: AudioChannelID.microphone($0.deviceID), name: $0.name) } +
+            scenes.flatMap(\.layers).filter(\.hasAudio).map { (id: AudioChannelID.layer($0.id), name: $0.name) }
     }
     /// Applies settings while a scene runs; `source(id)` returns the layer's running source when it has one.
     func configure(audio: AudioPreferences, scenes: [CameraScene], live: CameraScene, source: (UUID) -> SceneMediaSource?) {
@@ -178,7 +176,7 @@ protocol AudioCapableSource: AnyObject {
         let liveLayers = Set(live.layers.filter(\.visible).map(\.id))
         var attachedNow: [UUID: ObjectIdentifier] = [:]
         let all = scenes.flatMap(\.layers)
-        for layer in all where layer.hasAudio && !layer.source.isBrowser {
+        for layer in all where layer.hasAudio {
             let id = AudioChannelID.layer(layer.id)
             let channel = channel(id: id, name: layer.name)
             channel.update(mix: layer.audio?.mix ?? ChannelMix(), active: liveLayers.contains(layer.id)); next.append(channel)
@@ -193,34 +191,11 @@ protocol AudioCapableSource: AnyObject {
             (source(layer.id) as? AudioCapableSource)?.setAudioChannel(nil) { _ in }
         }
         attached = attachedNow
-        // Browser pages: per-layer sound switches inside the pages, one shared capture.
-        for layer in all where layer.source.isBrowser {
-            (source(layer.id) as? BrowserSceneSource)?.setSound(layer.hasAudio)
-        }
-        let browserLayers = all.filter { $0.hasAudio && $0.source.isBrowser }
-        if !browserLayers.isEmpty {
-            let channel = channel(id: AudioChannelID.browser, name: AudioChannelID.browserName)
-            channel.update(mix: audio.browser, active: browserLayers.contains { liveLayers.contains($0.id) }); next.append(channel)
-            startPages(into: channel)
-        } else if let pages { self.pages = nil; pages.input.attach(nil); Task { await pages.stop() } }
         channels = Dictionary(uniqueKeysWithValues: next.map { ($0.id, $0) })
         mixer.setChannels(next, master: audio.master)
         if audio.monitor {
             do { try monitor.start(deviceUID: audio.monitorDeviceUID) } catch { monitor.stop(); onFailure?("monitor", error.localizedDescription) }
         } else { monitor.stop() }
-    }
-    private func startPages(into channel: MixChannel) {
-        if let pages { pages.input.attach(channel); return }
-        guard !pagesStarting else { return }
-        pagesStarting = true
-        let capture = AppAudioCapture(kind: .ownPages)
-        capture.input.attach(channel)
-        capture.onFailure = { [weak self] message in self?.onFailure?(AudioChannelID.browser, message) }
-        Task {
-            defer { pagesStarting = false }
-            do { try await capture.start(); pages = capture }
-            catch { onFailure?(AudioChannelID.browser, "Browser sound cannot be captured: \(error.localizedDescription)") }
-        }
     }
     private func forward(_ report: AudioReport, id: String) {
         switch report {
@@ -231,7 +206,6 @@ protocol AudioCapableSource: AnyObject {
     /// Stops every microphone and clears the mix (the scene stopped).
     func stop() {
         microphones.values.forEach { $0.stop() }; microphones = [:]; attached = [:]; channels = [:]; monitor.stop()
-        if let pages { self.pages = nil; pages.input.attach(nil); Task { await pages.stop() } }
         mixer.setChannels([], master: ChannelMix())
     }
     private func channel(id: String, name: String, followsCamera: Bool = false) -> MixChannel {

@@ -78,6 +78,51 @@ final class AudioTests: XCTestCase {
         XCTAssertEqual(timeline.resyncs, 1)
         XCTAssertEqual(read(timeline, from: 10_000, count: 1), [2, -2])
     }
+    /// Each frame of a web page is its own stream: streams keep their own positions and are summed.
+    func testStreamsAreSummedAndKeepTheirOwnPositions() {
+        let timeline = ChannelTimeline()
+        stereo(100) { _ in 1 }.withUnsafeBufferPointer { timeline.write($0, at: 0, stream: 0) }
+        stereo(100) { _ in 0.5 }.withUnsafeBufferPointer { timeline.write($0, at: 50, stream: 1) }
+        // Stream 1 continues where it left off although stream 0 is elsewhere: no drift is inferred between streams.
+        stereo(100) { _ in 0.25 }.withUnsafeBufferPointer { timeline.write($0, at: 150, stream: 1) }
+        XCTAssertEqual(timeline.streamCount, 2); XCTAssertEqual(timeline.resyncs, 0)
+        let out = read(timeline, from: 0, count: 300)
+        XCTAssertEqual(out[10 * 2], 1); XCTAssertEqual(out[60 * 2], 1.5); XCTAssertEqual(out[60 * 2 + 1], -1.5)
+        XCTAssertEqual(out[120 * 2], 0.5); XCTAssertEqual(out[200 * 2], 0.25); XCTAssertEqual(out[260 * 2], 0)
+        timeline.forget(stream: 1); XCTAssertEqual(timeline.streamCount, 1)
+        timeline.restart(); XCTAssertEqual(timeline.streamCount, 0)
+    }
+    private func packet(_ samples: [Float], time: Double = 1_000_000, rate: Double = 48_000, stream: String = "frame") -> [String: Any] {
+        let data = samples.withUnsafeBufferPointer { Data(buffer: $0) }
+        return ["s": stream, "t": time, "r": rate, "d": data.base64EncodedString()]
+    }
+    func testPageAudioPacketIsCheckedAndBounded() throws {
+        let now = 1_000_000.0
+        let good = try XCTUnwrap(PageAudioPacket(body: packet([0.5, -0.5, .nan, .infinity, 9, -9]), wallNow: now))
+        XCTAssertEqual(good.frames, 3); XCTAssertEqual(good.stream, "frame")
+        XCTAssertEqual(good.samples, [0.5, -0.5, 0, 0, 4, -4], "Non-finite samples become silence; extremes are bounded")
+        XCTAssertNil(PageAudioPacket(body: packet([0.5]), wallNow: now), "Interleaved stereo only: whole frames")
+        XCTAssertNil(PageAudioPacket(body: packet([0, 0], time: now - 6_000), wallNow: now), "A stale time is rejected")
+        XCTAssertNil(PageAudioPacket(body: packet([0, 0], time: .nan), wallNow: now))
+        XCTAssertNil(PageAudioPacket(body: packet([0, 0], rate: 1_000_000), wallNow: now))
+        XCTAssertNil(PageAudioPacket(body: packet([0, 0], stream: ""), wallNow: now))
+        XCTAssertNil(PageAudioPacket(body: packet([Float](repeating: 0, count: (PageAudioPacket.maximumFrames + 1) * 2)), wallNow: now))
+        XCTAssertNil(PageAudioPacket(body: ["s": "frame", "t": now, "r": 48_000, "d": "not base64!"], wallNow: now))
+        XCTAssertNil(PageAudioPacket(body: "text", wallNow: now))
+    }
+    func testPageAudioTimeMapsTheWallClockToTheHostClock() throws {
+        let p = try XCTUnwrap(PageAudioPacket(body: packet([0, 0], time: 1_000_000 - 120), wallNow: 1_000_000))
+        XCTAssertEqual(p.hostTime(hostNow: 500, wallNow: 1_000_000), 499.88, accuracy: 1e-9, "Heard 120 ms ago on the wall clock")
+    }
+    func testPageAudioNotes() {
+        XCTAssertEqual(PageAudioNote.parse(["note": "blocked", "host": "cdn.example.com"]),
+                       "Sound from cdn.example.com cannot be recorded: that site does not let other pages use its sound, so it stays silent.")
+        XCTAssertEqual(PageAudioNote.parse(["note": "blocked", "host": "evil<b>.com"]), PageAudioNote.parse(["note": "blocked", "host": "evilb.com"]), "Host names are sanitized")
+        XCTAssertEqual(PageAudioNote.parse(["note": "unavailable"]), PageAudioNote.unavailable)
+        XCTAssertNil(PageAudioNote.parse(["note": "blocked", "host": "<>"]))
+        XCTAssertNil(PageAudioNote.parse(["note": "other"]))
+        XCTAssertNil(PageAudioNote.parse(packet([0, 0])), "Sound packets are not notes")
+    }
     func testGainRampAndSum() {
         var samples: [Float] = [1, 1, 1, 1, 1, 1, 1, 1] // 4 stereo frames
         samples.withUnsafeMutableBufferPointer { MixMath.applyGain($0, from: 0, to: 1) }
