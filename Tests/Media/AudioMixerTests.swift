@@ -125,6 +125,21 @@ final class MeetingExclusionTests: XCTestCase {
         XCTAssertFalse(AudioInputUsers.isUsingInput(pid: own, bundleID: "com.vanguardsignals.AppleCam",
             users: [.init(pid: own, bundleID: "com.vanguardsignals.AppleCam")], own: own), "AppleCam's own microphones never exclude it")
     }
+    func testAnAppsSoundIsTheAppAndItsHelpers() {
+        let processes: [CoreAudioProcess.Info] = [
+            .init(object: 10, pid: 3, bundleID: "com.google.Chrome", runningOutput: false),
+            .init(object: 11, pid: 7, bundleID: "com.google.Chrome.helper", runningOutput: true),
+            .init(object: 12, pid: 8, bundleID: "com.google.Chrome.helper", runningOutput: false),
+            .init(object: 13, pid: 9, bundleID: "com.google.ChromeCanary", runningOutput: true),
+            .init(object: 14, pid: 20, bundleID: "com.apple.WebKit.GPU", runningOutput: true),
+            .init(object: 15, pid: own, bundleID: "com.vanguardsignals.AppleCam", runningOutput: true)]
+        XCTAssertEqual(CoreAudioProcess.playing(for: 3, bundleID: "com.google.Chrome", in: processes, own: own), [10, 11, 12],
+                       "The app and every helper below its identifier, playing now or not")
+        XCTAssertEqual(CoreAudioProcess.playing(for: 9, bundleID: "", in: processes, own: own), [13], "By process when there is no identifier")
+        XCTAssertEqual(CoreAudioProcess.playing(for: 30, bundleID: "com.apple.Safari", in: processes, own: own), [],
+                       "Safari plays through WebKit's shared process, which belongs to no app")
+        XCTAssertEqual(CoreAudioProcess.playing(for: own, bundleID: "com.vanguardsignals.AppleCam", in: processes, own: own), [], "Never AppleCam itself")
+    }
     func testMicrophoneUsersWithoutACapturableAppAreReported() {
         let users: [AudioInputUsers.Process] = [.init(pid: 1, bundleID: "com.apple.replayd"), .init(pid: 2, bundleID: "us.zoom.xos"),
                                                 .init(pid: 3, bundleID: "com.example.hidden"), .init(pid: own, bundleID: "com.vanguardsignals.AppleCam")]

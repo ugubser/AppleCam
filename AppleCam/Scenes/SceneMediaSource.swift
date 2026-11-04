@@ -143,9 +143,11 @@ final class SourceFrameStore {
 
 final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCStreamDelegate, AudioCapableSource {
     private let filter: SCContentFilter
-    /// Window layers capture their app's sound, screen layers all sound; a separate audio-only stream (see AppAudioCapture).
-    private let audioKind: AppAudioCapture.Kind
-    private var audio: AppAudioCapture?
+    /// What a layer's sound is: a window layer's app (a muted Core Audio tap, `AppSoundTap`) or all sound on the screen
+    /// (an audio-only ScreenCaptureKit stream, `AppAudioCapture`).
+    enum Sound: Equatable { case application(pid: pid_t, bundleID: String), display }
+    private let sound: Sound
+    private var audio: LayerSoundCapture?
     private var audioReport: (@MainActor (AudioReport) -> Void)?
     private var isActive = false
     private let configuration: SCStreamConfiguration
@@ -153,8 +155,8 @@ final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCSt
     private var stream: SCStream?
     private let streamLock = NSLock()
     private let queue = DispatchQueue(label: "com.vanguardsignals.AppleCam.layer-capture", qos: .userInitiated)
-    init(filter: SCContentFilter, fps: Double, audio: AppAudioCapture.Kind, cursor: Bool = true) {
-        self.filter = filter; audioKind = audio
+    init(filter: SCContentFilter, fps: Double, audio: Sound, cursor: Bool = true) {
+        self.filter = filter; sound = audio
         configuration = SCStreamConfiguration()
         // contentRect is in points; capture in pixels so Retina windows and screens stay sharp.
         let size = filter.contentRect.size, scale = CGFloat(filter.pointPixelScale)
@@ -179,7 +181,7 @@ final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCSt
     }
     @MainActor func setAudioChannel(_ channel: MixChannel?, report: @escaping @MainActor (AudioReport) -> Void) {
         if let channel {
-            let capture = audio ?? AppAudioCapture(kind: audioKind)
+            let capture = audio ?? makeCapture()
             capture.input.attach(channel); audio = capture; audioReport = report
             capture.onNote = { note in report(.note(note)) }
             capture.onFailure = { message in report(.failure(message)) }
@@ -187,6 +189,12 @@ final class CaptureSceneSource: NSObject, SceneMediaSource, SCStreamOutput, SCSt
         } else if let old = audio {
             audio = nil; audioReport = nil; report(.note(nil)); old.input.attach(nil)
             Task { await old.stop() }
+        }
+    }
+    @MainActor private func makeCapture() -> LayerSoundCapture {
+        switch sound {
+        case .application(let pid, let bundleID): return AppSoundTap(pid: pid, bundleID: bundleID)
+        case .display: return AppAudioCapture(kind: .display)
         }
     }
     @MainActor private func startAudio() async {

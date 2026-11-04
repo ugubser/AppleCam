@@ -25,6 +25,8 @@
 "EBA339768DD540299EFCD327" = { "isa" = "PBXBuildFile"; "fileRef" = "329993238BB245E08FD4D8CB"; };
 "83DE63BDB59C4FA69F53B564" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Audio/WebKitAudioTap.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "7C3278EF552646BCB8F2DDA7" = { "isa" = "PBXBuildFile"; "fileRef" = "83DE63BDB59C4FA69F53B564"; };
+"D82AB446405E4568BE9A6B75" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Audio/AppSoundTap.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
+"335F5337D5E247DD8A19C007" = { "isa" = "PBXBuildFile"; "fileRef" = "D82AB446405E4568BE9A6B75"; };
 "3C9C4964EA7045B7807412F4" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Audio/ClipAudioTap.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
 "B183E2FDEBDC44F3A81715AE" = { "isa" = "PBXBuildFile"; "fileRef" = "3C9C4964EA7045B7807412F4"; };
 "C7E4F507B0BD446C9A312AD3" = { "isa" = "PBXFileReference"; "path" = "AppleCam/Recording/SceneRecorder.swift"; "lastKnownFileType" = "sourcecode.swift"; "sourceTree" = "<group>"; };
@@ -202,6 +204,7 @@
 "3C9C4964EA7045B7807412F4",
 "329993238BB245E08FD4D8CB",
 "83DE63BDB59C4FA69F53B564",
+"D82AB446405E4568BE9A6B75",
 "EA8F8C28E7634065B84F932C",
 "8B5487B61D5448F3A2EB3E98",
 "4773502AAC6B41D5BB2BEA23",
@@ -464,6 +467,7 @@
 "B183E2FDEBDC44F3A81715AE",
 "EBA339768DD540299EFCD327",
 "7C3278EF552646BCB8F2DDA7",
+"335F5337D5E247DD8A19C007",
 "1DB05268F0654C748D891741",
 "73EB56603AB44F8BB99EE128",
 "6B9EFADEB3F8498584B15EB5",

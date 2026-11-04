@@ -91,7 +91,7 @@ struct MissingSceneSource: Error {
             browser.onStateChange = { [weak self] in self?.onSourceStateChange?() }
             source = browser
         case .window(let reference):
-            source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps, audio: .application(pid: reference?.processID ?? 0))
+            source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps, audio: .application(pid: reference?.processID ?? 0, bundleID: reference?.applicationID ?? ""))
         case .display: source = CaptureSceneSource(filter: try await filter(for: layer), fps: fps, audio: .display)
         case .camera: throw CameraError.message("Webcam frames belong to the shared camera session.")
         }

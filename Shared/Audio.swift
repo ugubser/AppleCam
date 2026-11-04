@@ -102,9 +102,6 @@ public struct LevelMeter: Equatable, Sendable {
 /// Every device runs on its own clock. Consecutive buffers are written back to back and gently pulled toward their
 /// timestamps by inserting or dropping one frame per buffer when they drift more than `slewThreshold`, which corrects
 /// several thousand ppm without audible jumps. Only a jump larger than `resyncThreshold` (a real dropout) re-anchors.
-///
-/// A channel can have several streams (each frame of a web page plays its own): each stream keeps its own position
-/// and the streams are summed.
 public final class ChannelTimeline: @unchecked Sendable {
     public static let slewThreshold: Int64 = 48       // 1 ms
     public static let resyncThreshold: Int64 = 4_800  // 100 ms
@@ -112,20 +109,20 @@ public final class ChannelTimeline: @unchecked Sendable {
     private var storage: [Float]
     private let capacity: Int64
     private var readHead: Int64 = 0
-    private var next: [Int: Int64] = [:]
+    private var next: Int64?
     public private(set) var droppedLate = 0
     public private(set) var resyncs = 0
     public init(seconds: Double = 4) {
         capacity = AudioFormat.frames(seconds: seconds)
         storage = Array(repeating: 0, count: Int(capacity) * AudioFormat.channels)
     }
-    /// Adds interleaved stereo frames of `stream` whose first frame belongs at `position`.
-    public func write(_ samples: UnsafeBufferPointer<Float>, at position: Int64, stream: Int = 0) {
+    /// Writes interleaved stereo frames whose first frame belongs at `position`.
+    public func write(_ samples: UnsafeBufferPointer<Float>, at position: Int64) {
         lock.lock(); defer { lock.unlock() }
         let c = AudioFormat.channels, count = samples.count / c
         guard count > 0 else { return }
         var start = position, written = count
-        if let expected = next[stream] {
+        if let expected = next {
             let drift = position - expected
             if abs(drift) <= Self.resyncThreshold {
                 start = expected
@@ -133,13 +130,13 @@ public final class ChannelTimeline: @unchecked Sendable {
                 else if drift < -Self.slewThreshold, count > 1 { written = count - 1 } // running ahead: drop the last frame
             } else { resyncs += 1 }
         }
-        next[stream] = start + Int64(written)
+        next = start + Int64(written)
         for i in 0..<written {
             let at = start + Int64(i), source = min(i, count - 1)
             guard at >= readHead else { droppedLate += 1; continue }
             guard at < readHead + capacity else { continue }
             let slot = Int(at % capacity) * c
-            for k in 0..<c { storage[slot + k] += samples[source * c + k] }
+            for k in 0..<c { storage[slot + k] = samples[source * c + k] }
         }
     }
     /// Copies frames [position, position + count) into `out` (interleaved stereo) and clears them.
@@ -155,11 +152,8 @@ public final class ChannelTimeline: @unchecked Sendable {
         }
         readHead = max(readHead, position + Int64(count))
     }
-    /// Starts a new run (after a source restarts): the next buffer of every stream anchors at its own timestamp.
-    public func restart() { lock.lock(); next = [:]; lock.unlock() }
-    /// Forgets a stream that ended (its frame went away).
-    public func forget(stream: Int) { lock.lock(); next[stream] = nil; lock.unlock() }
-    public var streamCount: Int { lock.lock(); defer { lock.unlock() }; return next.count }
+    /// Starts a new run (after a source restarts): the next buffer anchors at its own timestamp.
+    public func restart() { lock.lock(); next = nil; lock.unlock() }
 }
 
 /// Applies per-channel gain (ramped across the block so fader moves never click) and sums channels into the mix.

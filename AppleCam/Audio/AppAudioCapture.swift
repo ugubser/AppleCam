@@ -54,11 +54,20 @@ enum AudioInputUsers {
     }
 }
 
-/// Audio of one app or of the whole screen, through an audio-only ScreenCaptureKit stream.
-final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+/// A layer's sound source: started while its layer is active, writing into `input`.
+@MainActor protocol LayerSoundCapture: AnyObject {
+    var input: ChannelInput { get }
+    /// The explanation when the source is (partly) left out, nil when it is fine again.
+    var onNote: ((String?) -> Void)? { get set }
+    var onFailure: ((String) -> Void)? { get set }
+    func start() async throws
+    func stop() async
+}
+
+/// Audio of the whole screen (everything except AppleCam and apps using a microphone), through an audio-only
+/// ScreenCaptureKit stream. Window layers use `AppSoundTap` instead, which also keeps the app off the speakers.
+final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, LayerSoundCapture, @unchecked Sendable {
     enum Kind: Equatable {
-        /// The app owning a window layer.
-        case application(pid: pid_t)
         /// All sound except AppleCam and apps using a microphone.
         case display
     }
@@ -138,13 +147,6 @@ final class AppAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchec
         let inCall = content.applications.filter { AudioInputUsers.isUsingInput(pid: $0.processID, bundleID: $0.bundleIdentifier, users: users) }
         log.notice("Audio filter \(String(describing: kind), privacy: .public): microphone users \(users.map { "\($0.bundleID)(\($0.pid))" }.joined(separator: ", "), privacy: .public); in a call: \(inCall.map(\.bundleIdentifier).joined(separator: ", "), privacy: .public)")
         switch kind {
-        case .application(let pid):
-            guard let app = content.applications.first(where: { $0.processID == pid }) else {
-                throw CameraError.message("The window's app is no longer running.")
-            }
-            let inUse = inCall.contains(where: { $0.processID == pid })
-            let note = inUse ? "\(app.applicationName) is using a microphone (probably a call), so its sound is left out." : nil
-            return (SCContentFilter(display: display, including: [app], exceptingWindows: []), note, inUse)
         case .display:
             let ours = content.applications.filter { $0.processID == own }
             let hidden = AudioInputUsers.unmatched(users, apps: content.applications.map { ($0.processID, $0.bundleIdentifier) })

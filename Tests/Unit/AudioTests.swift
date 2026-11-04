@@ -78,19 +78,15 @@ final class AudioTests: XCTestCase {
         XCTAssertEqual(timeline.resyncs, 1)
         XCTAssertEqual(read(timeline, from: 10_000, count: 1), [2, -2])
     }
-    /// Each frame of a web page is its own stream: streams keep their own positions and are summed.
-    func testStreamsAreSummedAndKeepTheirOwnPositions() {
+    /// A source that restarts (a tap rebuilt for a new helper process) can rewrite frames already written; they are
+    /// replaced, never added, so the same sound written twice does not partly cancel itself.
+    func testRewrittenFramesAreReplacedNotAdded() {
         let timeline = ChannelTimeline()
-        stereo(100) { _ in 1 }.withUnsafeBufferPointer { timeline.write($0, at: 0, stream: 0) }
-        stereo(100) { _ in 0.5 }.withUnsafeBufferPointer { timeline.write($0, at: 50, stream: 1) }
-        // Stream 1 continues where it left off although stream 0 is elsewhere: no drift is inferred between streams.
-        stereo(100) { _ in 0.25 }.withUnsafeBufferPointer { timeline.write($0, at: 150, stream: 1) }
-        XCTAssertEqual(timeline.streamCount, 2); XCTAssertEqual(timeline.resyncs, 0)
-        let out = read(timeline, from: 0, count: 300)
-        XCTAssertEqual(out[10 * 2], 1); XCTAssertEqual(out[60 * 2], 1.5); XCTAssertEqual(out[60 * 2 + 1], -1.5)
-        XCTAssertEqual(out[120 * 2], 0.5); XCTAssertEqual(out[200 * 2], 0.25); XCTAssertEqual(out[260 * 2], 0)
-        timeline.forget(stream: 1); XCTAssertEqual(timeline.streamCount, 1)
-        timeline.restart(); XCTAssertEqual(timeline.streamCount, 0)
+        stereo(100) { _ in 0.5 }.withUnsafeBufferPointer { timeline.write($0, at: 0) }
+        timeline.restart()
+        stereo(100) { _ in 0.25 }.withUnsafeBufferPointer { timeline.write($0, at: 50) }
+        let out = read(timeline, from: 0, count: 200)
+        XCTAssertEqual(out[10 * 2], 0.5); XCTAssertEqual(out[60 * 2], 0.25, "Replaced, not 0.75"); XCTAssertEqual(out[160 * 2], 0)
     }
     // MARK: Finding AppleCam's WebKit audio process
 

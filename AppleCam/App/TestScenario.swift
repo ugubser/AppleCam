@@ -7,7 +7,8 @@ import ScreenCaptureKit
 /// Debug builds only: `--test-audio-scenario <folder>` runs an unattended end-to-end recording for verification.
 /// The folder (inside the app container) holds `page-url.txt` and optionally `clip.mov`; the app builds Scene 1 with the
 /// test-pattern webcam, the main screen, the page and the clip (all with audio on), records `seconds.txt` seconds
-/// (default 6) into `<folder>/out`, writes `<folder>/result.json`, and quits. It also listens to AppleCam's own output
+/// (default 6) into `<folder>/out`. `window-app.txt` (a bundle ID) adds a window layer of that app's first window, with
+/// audio on, writes `<folder>/result.json`, and quits. It also listens to AppleCam's own output
 /// (including its WebKit processes) to show that page and clip sound never reach the speakers; `control.wav` (if present)
 /// is played at 0.1 % volume first to prove that this listener hears AppleCam.
 @MainActor enum TestScenario {
@@ -33,6 +34,12 @@ import ScreenCaptureKit
             if let url = try? String(contentsOf: folder.appendingPathComponent("page-url.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) {
                 var settings = BrowserSettings(); settings.url = url
                 var page = SceneLayer(name: "Tone page", source: .browser(settings)); page.audio = LayerAudio(enabled: true); layers.append(page)
+            }
+            if let app = try? String(contentsOf: folder.appendingPathComponent("window-app.txt"), encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) {
+                let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+                guard let window = content.windows.first(where: { $0.owningApplication?.bundleIdentifier == app && $0.windowLayer == 0 }),
+                      let reference = CaptureSelection.reference(window) else { throw CameraError.message("No window of \(app) to capture.") }
+                var layer = SceneLayer(name: "Tone window", source: .window(reference)); layer.audio = LayerAudio(enabled: true); layers.append(layer)
             }
             let clip = folder.appendingPathComponent("clip.mov")
             if FileManager.default.fileExists(atPath: clip.path) {

@@ -207,7 +207,8 @@ struct LayerAudioSection: View {
         switch source {
         case .clip: return "The clip's sound goes into the mix only; it is not played through your speakers. Use Monitor to listen."
         case .browser: return "All browser layers share one “Browser pages” channel; this switch decides whether this page makes sound. Page sound goes into the mix only, not through your speakers (use Monitor to listen). Needs System Audio Recording permission, which macOS asks for the first time. Pages that make sound with Web Audio (games, synthesizers) stay silent."
-        case .window, .display: return "Needs Screen Recording permission. The app keeps playing through your speakers as usual. Apps that are using a microphone (for example a meeting) are left out so other participants are never recorded."
+        case .window: return "The app's sound goes into the mix only; it is not played through your speakers while the layer's scene is live (use Monitor to listen). Needs System Audio Recording permission. Apps that play sound through WebKit, such as Safari and Mail, cannot be captured. An app that is using a microphone (for example a meeting) is left out and plays normally, so other participants are never recorded."
+        case .display: return "Needs Screen Recording permission. Apps keep playing through your speakers as usual. Apps that are using a microphone (for example a meeting) are left out so other participants are never recorded."
         default: return ""
         }
     }

@@ -4,11 +4,8 @@ import AppleCamCore
 import AVFoundation
 
 /// Converts any linear-PCM input (any rate, mono or stereo, interleaved or not) to the mix format and writes it
-/// into a channel. One instance per source stream; called from that stream's delivery thread only.
+/// into a channel. One instance per source; called from that source's delivery thread only.
 final class ChannelInput: @unchecked Sendable {
-    /// Which of the channel's streams this input writes (see `ChannelTimeline`).
-    let stream: Int
-    init(stream: Int = 0) { self.stream = stream }
     private let lock = NSLock()
     private var channel: MixChannel?
     private var converter: AVAudioConverter?
@@ -19,6 +16,9 @@ final class ChannelInput: @unchecked Sendable {
     private var convertedOut: Double = 0
     private let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: AudioFormat.sampleRate, channels: 2, interleaved: true)!
     func attach(_ channel: MixChannel?) { lock.withLock { self.channel = channel } }
+    /// The source restarted (a tap was replaced): its next buffer anchors at its own timestamp instead of being slewed
+    /// toward it frame by frame, which would make a steady tone jump for seconds.
+    func restart() { lock.withLock { channel }?.timeline.restart() }
     var isAttached: Bool { lock.withLock { channel != nil } }
 
     /// Writes a Core Media audio sample whose first frame was captured at `hostTime`.
@@ -38,7 +38,7 @@ final class ChannelInput: @unchecked Sendable {
         let format = buffer.format
         if format.commonFormat == .pcmFormatFloat32, format.sampleRate == AudioFormat.sampleRate, format.channelCount == 2,
            format.isInterleaved, let data = buffer.floatChannelData {
-            channel.write(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength) * 2), hostTime: hostTime, stream: stream); return
+            channel.write(UnsafeBufferPointer(start: data[0], count: Int(buffer.frameLength) * 2), hostTime: hostTime); return
         }
         if inputFormat != format {
             inputFormat = format; converter = AVAudioConverter(from: format, to: target); convertedIn = 0; convertedOut = 0
@@ -57,7 +57,7 @@ final class ChannelInput: @unchecked Sendable {
         let held = convertedIn * AudioFormat.sampleRate / format.sampleRate - convertedOut
         convertedIn += Double(buffer.frameLength); convertedOut += Double(out.frameLength)
         guard error == nil, out.frameLength > 0, let data = out.floatChannelData else { return }
-        channel.write(UnsafeBufferPointer(start: data[0], count: Int(out.frameLength) * 2), hostTime: hostTime - held / AudioFormat.sampleRate, stream: stream)
+        channel.write(UnsafeBufferPointer(start: data[0], count: Int(out.frameLength) * 2), hostTime: hostTime - held / AudioFormat.sampleRate)
     }
 }
 

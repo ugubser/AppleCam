@@ -38,10 +38,10 @@ final class MixChannel: @unchecked Sendable {
     fileprivate func setVideoDelay(_ seconds: Double) { lock.withLock { extraDelay = followsCamera ? seconds : 0 } }
     fileprivate var targetGain: Float { lock.withLock { active ? mix.gain : 0 } }
     /// Interleaved stereo float frames of `stream` captured at `hostTime` (seconds on the host clock).
-    func write(_ samples: UnsafeBufferPointer<Float>, hostTime: Double, stream: Int = 0) {
+    func write(_ samples: UnsafeBufferPointer<Float>, hostTime: Double) {
         let state = lock.withLock { () -> (Double, Double)? in epoch.map { ($0, mix.offsetMilliseconds / 1000 + extraDelay) } }
         guard let (epoch, delay) = state, hostTime.isFinite else { return }
-        timeline.write(samples, at: AudioFormat.frames(seconds: hostTime + delay - epoch), stream: stream)
+        timeline.write(samples, at: AudioFormat.frames(seconds: hostTime + delay - epoch))
     }
 }
 

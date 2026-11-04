@@ -41,7 +41,7 @@ extension CameraModel {
     }
     static func audioScope(_ source: LayerSource) -> String? {
         switch source {
-        case .window(let reference): return "All sound of \(reference.flatMap { NSRunningApplication(processIdentifier: $0.processID)?.localizedName } ?? "the window's app"), not only this window."
+        case .window(let reference): return "All sound of \(reference.flatMap { NSRunningApplication(processIdentifier: $0.processID)?.localizedName } ?? "the window's app") and its helper processes, not only this window."
         case .display: return "All sound on this Mac except AppleCam and apps using a microphone."
         default: return nil
         }
